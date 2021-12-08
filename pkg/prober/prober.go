@@ -118,6 +118,8 @@ func (pw *ProberWorker) StartProbing() error {
 		}
 	}
 
+	ticker := time.NewTicker(shortestInterval)
+
 	for {
 		select {
 		// If we receive something on the control chan we terminate
@@ -128,7 +130,7 @@ func (pw *ProberWorker) StartProbing() error {
 				check.TeardownFn(pw.endpoint)
 			}
 			return nil
-		case <-time.After(shortestInterval):
+		case <-ticker.C:
 			log.Printf("Checking for work on %s\n", pw.endpoint.GetName())
 
 			for {

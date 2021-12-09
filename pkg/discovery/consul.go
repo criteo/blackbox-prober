@@ -12,12 +12,15 @@ import (
 )
 
 type ConsulDiscoverer struct {
-	client       *consul.Client
-	config       ConsulConfig
+	client *consul.Client
+	config ConsulConfig
+	// Function to build a topology out of service entries
+	topologyBuilderFn func([]ServiceEntry) topology.ClusterMap
+	// Chan where to send new topologies
 	topologyChan chan topology.ClusterMap
 }
 
-func NewConsulDiscoverer(config ConsulConfig, topologyChan chan topology.ClusterMap) (ConsulDiscoverer, error) {
+func NewConsulDiscoverer(config ConsulConfig, topologyChan chan topology.ClusterMap, topologyBuilderFn func([]ServiceEntry) topology.ClusterMap) (ConsulDiscoverer, error) {
 	wrapper, err := promconfig.NewClientFromConfig(config.HTTPClientConfig, "consul_sd")
 	if err != nil {
 		return ConsulDiscoverer{}, err
@@ -36,7 +39,13 @@ func NewConsulDiscoverer(config ConsulConfig, topologyChan chan topology.Cluster
 		return ConsulDiscoverer{}, err
 	}
 
-	return ConsulDiscoverer{client: client, config: config}, nil
+	// Check that we can reach Consul
+	_, err = client.Catalog().Datacenters()
+	if err != nil {
+		return ConsulDiscoverer{}, err
+	}
+
+	return ConsulDiscoverer{client: client, config: config, topologyBuilderFn: topologyBuilderFn, topologyChan: topologyChan}, nil
 }
 
 func (cd ConsulDiscoverer) Start() error {
@@ -46,12 +55,6 @@ func (cd ConsulDiscoverer) Start() error {
 	opts := &consul.QueryOptions{
 		AllowStale: cd.config.AllowStale,
 		NodeMeta:   cd.config.NodeMeta,
-	}
-
-	// Check that we can reach Consul
-	_, err := catalog.Datacenters()
-	if err != nil {
-		return err
 	}
 
 	srvs, _, err := catalog.Services(opts)
@@ -69,17 +72,31 @@ func (cd ConsulDiscoverer) Start() error {
 
 	log.Println("Found following services:", matchedServices)
 
-	allServiceEntries := []*consul.ServiceEntry{}
+	allServiceEntries := []ServiceEntry{}
 	// Check for removed services.
 	for _, srvc := range matchedServices {
 		entries, _, err := health.ServiceMultipleTags(srvc, cd.config.ServiceTags, false, opts)
 		if err != nil {
 			return err
 		}
-		allServiceEntries = append(allServiceEntries, entries...)
+		for _, entry := range entries {
+			allServiceEntries = append(allServiceEntries, toServiceEntry(entry))
+		}
 	}
-	log.Println(allServiceEntries)
+
+	// Send the new topology to the scheduler
+	cd.topologyChan <- cd.topologyBuilderFn(allServiceEntries)
 	return nil
+}
+
+func toServiceEntry(entry *consul.ServiceEntry) ServiceEntry {
+	return ServiceEntry{
+		Service: entry.Service.Service,
+		Tags:    entry.Service.Tags,
+		Meta:    entry.Service.Meta,
+		Port:    entry.Service.Port,
+		Address: entry.Service.Address,
+	}
 }
 
 // This part is (Apache licensed) code from Prometheus modified for the probe
@@ -103,7 +120,6 @@ type ConsulConfig struct {
 	Datacenter   string            `yaml:"datacenter,omitempty"`
 	Namespace    string            `yaml:"namespace,omitempty"`
 	TagSeparator string            `yaml:"tag_separator,omitempty"`
-	PassingOnly  bool              `yaml:"passing_only,omitempty"`
 	Scheme       string            `yaml:"scheme,omitempty"`
 	Username     string            `yaml:"username,omitempty"`
 	Password     promconfig.Secret `yaml:"password,omitempty"`
@@ -127,6 +143,9 @@ type ConsulConfig struct {
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
 	HTTPClientConfig promconfig.HTTPClientConfig `yaml:",inline"`
+
+	// Prober specifics
+	PassingOnly bool `yaml:"passing_only,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

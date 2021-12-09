@@ -11,8 +11,8 @@ type ClusterMap struct {
 }
 
 func NewClusterMap() ClusterMap {
-	t := make(map[string]Cluster)
-	return ClusterMap{Clusters: t}
+	c := make(map[string]Cluster)
+	return ClusterMap{Clusters: c}
 }
 
 func (gt *ClusterMap) FetchAllClusters() (clusters []Cluster) {
@@ -27,8 +27,17 @@ type Cluster struct {
 	Nodes   map[string]ProbeableEndpoint
 }
 
-func (ct *Cluster) FetchAllEndpoints() (endpoints []ProbeableEndpoint) {
-	for _, endpoint := range ct.Nodes {
+func NewCluster(cluster ProbeableEndpoint) Cluster {
+	n := make(map[string]ProbeableEndpoint)
+	return Cluster{Cluster: cluster, Nodes: n}
+}
+
+func (c *Cluster) AddEndpoint(endpoint ProbeableEndpoint) {
+	c.Nodes[endpoint.GetName()] = endpoint
+}
+
+func (c *Cluster) FetchAllEndpoints() (endpoints []ProbeableEndpoint) {
+	for _, endpoint := range c.Nodes {
 		endpoints = append(endpoints, endpoint)
 	}
 	return endpoints

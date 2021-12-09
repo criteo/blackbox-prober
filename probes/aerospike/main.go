@@ -11,21 +11,38 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type AerospikeClusterEndpoint struct {
+type AerospikeEndpoint struct {
 	name string
 }
 
-func (e AerospikeClusterEndpoint) Hash() string {
+func (e AerospikeEndpoint) Hash() string {
 	return e.name
 }
 
-func (e AerospikeClusterEndpoint) GetName() string {
+func (e AerospikeEndpoint) GetName() string {
 	return e.name
 }
 
 type AerospikeProbeConfig struct {
-	ConsulConfig discovery.ConsulConfig `yaml:"consul_sd_config,omitempty"`
+	// Generic consul configurations
+	DiscoveryConfig discovery.GenericDiscoveryConfig `yaml:"discovery,omitempty"`
+	// Client configuration
+	// AerospikeClientConfig AerospikeClientConfig `yaml:"client_config,omitempty"`
 	// Will include check configs
+}
+
+func generateNodeFromEntry(entry discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
+	// consul.ServiceEntry
+	return AerospikeEndpoint{name: entry.Address}, nil
+}
+
+func generateClusterFromEntries(entry []discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
+	// consul.ServiceEntry
+	return AerospikeEndpoint{name: entry[0].Address}, nil
+}
+
+func (conf AerospikeProbeConfig) generateTopologyBuilder() func([]discovery.ServiceEntry) topology.ClusterMap {
+	return conf.DiscoveryConfig.GetGenericTopologyBuilder(generateClusterFromEntries, generateNodeFromEntry)
 }
 
 func main() {
@@ -40,7 +57,7 @@ func main() {
 
 	// DISCO stuff
 	topo := make(chan topology.ClusterMap, 1)
-	discoverer, err := discovery.NewConsulDiscoverer(config.ConsulConfig, topo)
+	discoverer, err := discovery.NewConsulDiscoverer(config.DiscoveryConfig.ConsulConfig, topo, config.generateTopologyBuilder())
 	if err != nil {
 		log.Fatalln("Error during init of service discovery:", err)
 	}
@@ -48,10 +65,6 @@ func main() {
 	if err != nil {
 		log.Fatalln("Error during init of service discovery:", err)
 	}
-	cm := topology.NewClusterMap()
-
-	cm.Clusters["test"] = topology.Cluster{Cluster: AerospikeClusterEndpoint{name: "test"}, Nodes: make(map[string]topology.ProbeableEndpoint)}
-	topo <- cm
 
 	// Scheduler stuff
 	p := prober.NewProbingScheduler(topo)

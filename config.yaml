@@ -1,0 +1,11 @@
+discovery:
+  # Key used to group endpoints by clusters
+  # meta_cluster_key: "CLUSTER"
+  consul_sd_config:
+      server: localhost:8500
+      tag_separator: ','
+      scheme: http
+      allow_stale: true
+      refresh_interval: 30s
+      services:
+      - aerospike

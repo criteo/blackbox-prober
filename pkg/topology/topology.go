@@ -2,8 +2,14 @@ package topology
 
 // ProbeableEndpoint represent an endpoint that can be checked by the probe
 type ProbeableEndpoint interface {
+	// Hash used to compare two endpoints (useful for topology updates)
 	Hash() string
+	// Name of the endpoint useful for metrics and loggings
 	GetName() string
+	// Connect is called to initiliaze connections to the remote database
+	Connect() error
+	// Close should terminate all connections to the remote database
+	Close() error
 }
 
 type ClusterMap struct {

@@ -23,6 +23,14 @@ func (e AerospikeEndpoint) GetName() string {
 	return e.name
 }
 
+func (e AerospikeEndpoint) Connect() error {
+	return nil
+}
+
+func (e AerospikeEndpoint) Close() error {
+	return nil
+}
+
 type AerospikeProbeConfig struct {
 	// Generic consul configurations
 	DiscoveryConfig discovery.GenericDiscoveryConfig `yaml:"discovery,omitempty"`

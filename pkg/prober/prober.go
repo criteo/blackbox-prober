@@ -60,7 +60,7 @@ func (ps *ProbingScheduler) Start() {
 			// this is very naive way of doing it that should be improved in the future
 			allEndpoints := []topology.ProbeableEndpoint{}
 			for _, cluster := range ps.currentTopology.GetAllClusters() {
-				allEndpoints = append(allEndpoints, cluster.Cluster)
+				allEndpoints = append(allEndpoints, cluster.ClusterEndpoint)
 				allEndpoints = append(allEndpoints, cluster.GetAllEndpoints()...)
 			}
 			for _, endpoint := range allEndpoints {
@@ -68,7 +68,7 @@ func (ps *ProbingScheduler) Start() {
 			}
 
 			for _, cluster := range newTopology.GetAllClusters() {
-				ps.startNewWorker(cluster.Cluster, ps.clusterChecks)
+				ps.startNewWorker(cluster.ClusterEndpoint, ps.clusterChecks)
 				for _, endpoint := range cluster.GetAllEndpoints() {
 					ps.startNewWorker(endpoint, ps.nodeChecks)
 				}

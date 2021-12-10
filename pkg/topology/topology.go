@@ -23,21 +23,21 @@ func (gt *ClusterMap) GetAllClusters() (clusters []Cluster) {
 }
 
 type Cluster struct {
-	Cluster ProbeableEndpoint
-	Nodes   map[string]ProbeableEndpoint
+	ClusterEndpoint ProbeableEndpoint
+	NodeEndpoints   map[string]ProbeableEndpoint
 }
 
 func NewCluster(cluster ProbeableEndpoint) Cluster {
 	n := make(map[string]ProbeableEndpoint)
-	return Cluster{Cluster: cluster, Nodes: n}
+	return Cluster{ClusterEndpoint: cluster, NodeEndpoints: n}
 }
 
 func (c *Cluster) AddEndpoint(endpoint ProbeableEndpoint) {
-	c.Nodes[endpoint.GetName()] = endpoint
+	c.NodeEndpoints[endpoint.GetName()] = endpoint
 }
 
 func (c *Cluster) GetAllEndpoints() (endpoints []ProbeableEndpoint) {
-	for _, endpoint := range c.Nodes {
+	for _, endpoint := range c.NodeEndpoints {
 		endpoints = append(endpoints, endpoint)
 	}
 	return endpoints

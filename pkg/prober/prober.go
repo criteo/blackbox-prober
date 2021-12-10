@@ -59,17 +59,17 @@ func (ps *ProbingScheduler) Start() {
 			// Flush all current probes and recreate everything
 			// this is very naive way of doing it that should be improved in the future
 			allEndpoints := []topology.ProbeableEndpoint{}
-			for _, cluster := range ps.currentTopology.FetchAllClusters() {
+			for _, cluster := range ps.currentTopology.GetAllClusters() {
 				allEndpoints = append(allEndpoints, cluster.Cluster)
-				allEndpoints = append(allEndpoints, cluster.FetchAllEndpoints()...)
+				allEndpoints = append(allEndpoints, cluster.GetAllEndpoints()...)
 			}
 			for _, endpoint := range allEndpoints {
 				ps.stopWorkerForEndpoint(endpoint)
 			}
 
-			for _, cluster := range newTopology.FetchAllClusters() {
+			for _, cluster := range newTopology.GetAllClusters() {
 				ps.startNewWorker(cluster.Cluster, ps.clusterChecks)
-				for _, endpoint := range cluster.FetchAllEndpoints() {
+				for _, endpoint := range cluster.GetAllEndpoints() {
 					ps.startNewWorker(endpoint, ps.nodeChecks)
 				}
 			}

@@ -8,11 +8,19 @@ import (
 )
 
 type Check struct {
-	Name       string
-	PrepareFn  func(topology.ProbeableEndpoint) error
-	CheckFn    func(topology.ProbeableEndpoint) error
+	// Name of the check
+	Name string
+	// Prepare function called once after the endpoint has been init
+	// Used to prepare the database the check (creating the monitoring keyspaces/buckets... etc)
+	PrepareFn func(topology.ProbeableEndpoint) error
+	// Check function called every Interval
+	// Used to monitor the endpoint, this should produce metrics for SLXs
+	CheckFn func(topology.ProbeableEndpoint) error
+	// Teardown function called just before terminating/closing an endpoint
+	// Used to clean the database if needed
 	TeardownFn func(topology.ProbeableEndpoint) error
-	Interval   time.Duration
+	// Interval at which the CheckFn is performed
+	Interval time.Duration
 }
 
 // Noop do nothing. It is a noop function to use in a check when there is nothing to do

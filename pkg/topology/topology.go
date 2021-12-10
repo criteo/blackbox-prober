@@ -15,7 +15,7 @@ func NewClusterMap() ClusterMap {
 	return ClusterMap{Clusters: c}
 }
 
-func (gt *ClusterMap) FetchAllClusters() (clusters []Cluster) {
+func (gt *ClusterMap) GetAllClusters() (clusters []Cluster) {
 	for _, cluster := range gt.Clusters {
 		clusters = append(clusters, cluster)
 	}
@@ -36,7 +36,7 @@ func (c *Cluster) AddEndpoint(endpoint ProbeableEndpoint) {
 	c.Nodes[endpoint.GetName()] = endpoint
 }
 
-func (c *Cluster) FetchAllEndpoints() (endpoints []ProbeableEndpoint) {
+func (c *Cluster) GetAllEndpoints() (endpoints []ProbeableEndpoint) {
 	for _, endpoint := range c.Nodes {
 		endpoints = append(endpoints, endpoint)
 	}

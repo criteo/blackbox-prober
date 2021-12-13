@@ -107,16 +107,22 @@ type ProberWorker struct {
 	controlChan chan bool
 }
 
-func (pw *ProberWorker) StartProbing() error {
+func (pw *ProberWorker) StartProbing() {
 	log.Printf("Starting probing on %s\n", pw.endpoint.GetName())
 
 	if len(pw.checks) < 1 {
-		log.Printf("Probe not started for %s: no checks registered\n", pw.endpoint.GetName())
-		return nil
+		log.Fatalf("Probe not started for %s: no checks registered\n", pw.endpoint.GetName())
+		return
 	}
 
 	lastChecks := make([]time.Time, len(pw.checks))
 	shortestInterval := pw.checks[0].Interval
+
+	err := pw.endpoint.Connect()
+	if err != nil {
+		log.Fatalln(err)
+		return
+	}
 
 	for i, check := range pw.checks {
 		lastChecks[i] = time.Now()
@@ -137,7 +143,7 @@ func (pw *ProberWorker) StartProbing() error {
 			for _, check := range pw.checks {
 				check.TeardownFn(pw.endpoint)
 			}
-			return nil
+			return
 		case <-ticker.C:
 			log.Printf("Checking for work on %s\n", pw.endpoint.GetName())
 

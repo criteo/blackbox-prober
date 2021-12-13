@@ -15,12 +15,12 @@ type ConsulDiscoverer struct {
 	client *consul.Client
 	config ConsulConfig
 	// Function to build a topology out of service entries
-	topologyBuilderFn func([]ServiceEntry) topology.ClusterMap
+	topologyBuilderFn func([]ServiceEntry) (topology.ClusterMap, error)
 	// Chan where to send new topologies
 	topologyChan chan topology.ClusterMap
 }
 
-func NewConsulDiscoverer(config ConsulConfig, topologyChan chan topology.ClusterMap, topologyBuilderFn func([]ServiceEntry) topology.ClusterMap) (ConsulDiscoverer, error) {
+func NewConsulDiscoverer(config ConsulConfig, topologyChan chan topology.ClusterMap, topologyBuilderFn func([]ServiceEntry) (topology.ClusterMap, error)) (ConsulDiscoverer, error) {
 	wrapper, err := promconfig.NewClientFromConfig(config.HTTPClientConfig, "consul_sd")
 	if err != nil {
 		return ConsulDiscoverer{}, err
@@ -84,8 +84,12 @@ func (cd ConsulDiscoverer) Start() error {
 		}
 	}
 
+	clusterMap, err := cd.topologyBuilderFn(allServiceEntries)
+	if err != nil {
+		return err
+	}
 	// Send the new topology to the scheduler
-	cd.topologyChan <- cd.topologyBuilderFn(allServiceEntries)
+	cd.topologyChan <- clusterMap
 	return nil
 }
 

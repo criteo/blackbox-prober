@@ -1,56 +1,73 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
+	as "github.com/aerospike/aerospike-client-go"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/prober"
 	"github.com/criteo/blackbox-prober/pkg/topology"
+	"github.com/criteo/blackbox-prober/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
 
-type AerospikeEndpoint struct {
-	name string
+func (conf AerospikeProbeConfig) generateAerospikeEndpointFromEntry(entry discovery.ServiceEntry) (AerospikeEndpoint, error) {
+	authEnabled := conf.AerospikeEndpointConfig.AuthEnabled
+	var (
+		username    string
+		password    string
+		tlsHostname string
+		ok          bool
+	)
+	if authEnabled {
+		username, ok = os.LookupEnv(conf.AerospikeEndpointConfig.UsernameEnv)
+		log.Println(username)
+		if !ok {
+			return AerospikeEndpoint{}, fmt.Errorf("error: username not found in env (%s)", conf.AerospikeEndpointConfig.UsernameEnv)
+		}
+		password, ok = os.LookupEnv(conf.AerospikeEndpointConfig.PasswordEnv)
+		if !ok {
+			return AerospikeEndpoint{}, fmt.Errorf("error: password not found in env (%s)", conf.AerospikeEndpointConfig.PasswordEnv)
+		}
+	}
+
+	tlsEnabled := utils.Contains(entry.Tags, conf.AerospikeEndpointConfig.TLSTag)
+	if tlsEnabled {
+		hostname, ok := entry.Meta[conf.AerospikeEndpointConfig.TLSHostnameMetaKey]
+		if ok {
+			tlsHostname = hostname
+		}
+	}
+
+	return AerospikeEndpoint{Name: entry.Address, Config: AerospikeClientConfig{
+		// auth
+		authEnabled:  authEnabled,
+		authExternal: conf.AerospikeEndpointConfig.AuthExternal,
+		username:     username,
+		password:     password,
+		// tls
+		tlsEnabled:    tlsEnabled,
+		tlsHostname:   tlsHostname,
+		tlsSkipVerify: conf.AerospikeEndpointConfig.TLSSkipVerify,
+		// Contact point
+		host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port},
+	}}, nil
 }
 
-func (e AerospikeEndpoint) Hash() string {
-	return e.name
+func (conf AerospikeProbeConfig) generateNodeFromEntry(entry discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
+	return conf.generateAerospikeEndpointFromEntry(entry)
 }
 
-func (e AerospikeEndpoint) GetName() string {
-	return e.name
+func (conf AerospikeProbeConfig) generateClusterFromEntries(entries []discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
+	return conf.generateAerospikeEndpointFromEntry(entries[0])
 }
 
-func (e AerospikeEndpoint) Connect() error {
-	return nil
-}
-
-func (e AerospikeEndpoint) Close() error {
-	return nil
-}
-
-type AerospikeProbeConfig struct {
-	// Generic consul configurations
-	DiscoveryConfig discovery.GenericDiscoveryConfig `yaml:"discovery,omitempty"`
-	// Client configuration
-	// AerospikeClientConfig AerospikeClientConfig `yaml:"client_config,omitempty"`
-	// Will include check configs
-}
-
-func generateNodeFromEntry(entry discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
-	// consul.ServiceEntry
-	return AerospikeEndpoint{name: entry.Address}, nil
-}
-
-func generateClusterFromEntries(entry []discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
-	// consul.ServiceEntry
-	return AerospikeEndpoint{name: entry[0].Address}, nil
-}
-
-func (conf AerospikeProbeConfig) generateTopologyBuilder() func([]discovery.ServiceEntry) topology.ClusterMap {
-	return conf.DiscoveryConfig.GetGenericTopologyBuilder(generateClusterFromEntries, generateNodeFromEntry)
+func (conf AerospikeProbeConfig) generateTopologyBuilder() func([]discovery.ServiceEntry) (topology.ClusterMap, error) {
+	return conf.DiscoveryConfig.GetGenericTopologyBuilder(conf.generateClusterFromEntries, conf.generateNodeFromEntry)
 }
 
 func main() {
@@ -76,7 +93,7 @@ func main() {
 
 	// Scheduler stuff
 	p := prober.NewProbingScheduler(topo)
-	check := prober.Check{"noop check", prober.Noop, prober.Noop, prober.Noop, 1 * time.Second}
+	check := prober.Check{"noop check", prober.Noop, prober.Noop, prober.Noop, 1 * time.Minute}
 	p.RegisterNewClusterCheck(check)
 	p.Start()
 }

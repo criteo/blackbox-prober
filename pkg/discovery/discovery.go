@@ -30,21 +30,27 @@ var (
 
 func (conf GenericDiscoveryConfig) GetGenericTopologyBuilder(
 	ClusterFn func([]ServiceEntry) (topology.ProbeableEndpoint, error),
-	NodeFn func(ServiceEntry) (topology.ProbeableEndpoint, error)) func([]ServiceEntry) topology.ClusterMap {
+	NodeFn func(ServiceEntry) (topology.ProbeableEndpoint, error)) func([]ServiceEntry) (topology.ClusterMap, error) {
 
-	return func(entries []ServiceEntry) topology.ClusterMap {
+	return func(entries []ServiceEntry) (topology.ClusterMap, error) {
 		clusterMap := topology.NewClusterMap()
 		clusterEntries := conf.GroupNodesByCluster(entries)
 		for clusterName, entries := range clusterEntries {
-			clusterEndpoint, _ := ClusterFn(entries)
+			clusterEndpoint, err := ClusterFn(entries)
+			if err != nil {
+				return clusterMap, err
+			}
 			cluster := topology.NewCluster(clusterEndpoint)
 			for _, entry := range entries {
-				nodeEndpoint, _ := NodeFn(entry)
+				nodeEndpoint, err := NodeFn(entry)
+				if err != nil {
+					return clusterMap, err
+				}
 				cluster.AddEndpoint(nodeEndpoint)
 			}
 			clusterMap.Clusters[clusterName] = cluster
 		}
-		return clusterMap
+		return clusterMap, nil
 	}
 }
 

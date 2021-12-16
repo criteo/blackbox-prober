@@ -1,15 +1,46 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"time"
 
+	as "github.com/aerospike/aerospike-client-go"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/prober"
 	"github.com/criteo/blackbox-prober/pkg/topology"
+	"github.com/criteo/blackbox-prober/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
+
+func LatencyCheck(p topology.ProbeableEndpoint) error {
+	e, ok := p.(*AerospikeEndpoint)
+	if !ok {
+		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
+	}
+
+	for namespace := range e.namespaces {
+		// TODO configurable set
+		key, err := as.NewKey(namespace, "monitoring", utils.RandomHex(20))
+		if err != nil {
+			return err
+		}
+		val := as.BinMap{
+			"val": utils.RandomHex(1024),
+		}
+		policy := as.NewWritePolicy(0, 0)
+
+		err = e.Client.Put(policy, key, val)
+		if err != nil {
+			return fmt.Errorf("record put failed for: namespace=%s set=%s key=%v: %s", key.Namespace(), key.SetName(), key.Value(), err)
+		}
+		log.Printf("record put: namespace=%s set=%s key=%v", key.Namespace(), key.SetName(), key.Value())
+	}
+	return nil
+}
+
+// func (e topology.ProbeableEndpoint)
 
 func main() {
 	configData, err := ioutil.ReadFile("config.yaml")
@@ -34,7 +65,7 @@ func main() {
 
 	// Scheduler stuff
 	p := prober.NewProbingScheduler(topo)
-	check := prober.Check{"noop check", prober.Noop, prober.Noop, prober.Noop, 1 * time.Minute}
+	check := prober.Check{"Cluster check", prober.Noop, LatencyCheck, prober.Noop, 10 * time.Second}
 	p.RegisterNewClusterCheck(check)
 	p.Start()
 }

@@ -76,9 +76,13 @@ func (ps *ProbingScheduler) Start() {
 			}
 
 			for _, cluster := range newTopology.GetAllClusters() {
-				ps.startNewWorker(cluster.ClusterEndpoint, ps.clusterChecks)
+				if len(ps.clusterChecks) > 0 {
+					ps.startNewWorker(cluster.ClusterEndpoint, ps.clusterChecks)
+				}
 				for _, endpoint := range cluster.GetAllEndpoints() {
-					ps.startNewWorker(endpoint, ps.nodeChecks)
+					if len(ps.nodeChecks) > 0 {
+						ps.startNewWorker(endpoint, ps.nodeChecks)
+					}
 				}
 			}
 			ps.currentTopology = newTopology
@@ -89,6 +93,7 @@ func (ps *ProbingScheduler) Start() {
 func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEndpoint) {
 	workerChan, ok := ps.workerControlChans[endpoint]
 	if ok {
+		log.Printf("Stopping probing on %s\n", endpoint.GetName())
 		workerChan <- false // Terminate workers
 		delete(ps.workerControlChans, endpoint)
 	}
@@ -96,7 +101,7 @@ func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEnd
 
 func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) {
 	wc := make(chan bool)
-	w := ProberWorker{endpoint: endpoint, checks: ps.clusterChecks, controlChan: wc}
+	w := ProberWorker{endpoint: endpoint, checks: checks, controlChan: wc}
 	ps.workerControlChans[endpoint] = wc
 	go w.StartProbing()
 }
@@ -132,7 +137,8 @@ func (pw *ProberWorker) StartProbing() {
 		}
 	}
 
-	ticker := time.NewTicker(shortestInterval)
+	checkTicker := time.NewTicker(shortestInterval)
+	refreshTicker := time.NewTicker(30 * time.Second)
 
 	for {
 		select {
@@ -144,7 +150,10 @@ func (pw *ProberWorker) StartProbing() {
 				check.TeardownFn(pw.endpoint)
 			}
 			return
-		case <-ticker.C:
+		case <-refreshTicker.C:
+			log.Printf("Refreshing %s\n", pw.endpoint.GetName())
+			pw.endpoint.Refresh()
+		case <-checkTicker.C:
 			log.Printf("Checking for work on %s\n", pw.endpoint.GetName())
 
 			for {
@@ -152,7 +161,10 @@ func (pw *ProberWorker) StartProbing() {
 				for i, check := range pw.checks {
 					if lastChecks[i].Add(check.Interval).Before(time.Now()) {
 						log.Printf("Performing check %s on %s\n", check.Name, pw.endpoint.GetName())
-						check.CheckFn(pw.endpoint)
+						err = check.CheckFn(pw.endpoint)
+						if err != nil {
+							log.Println("Error while probing:", err)
+						}
 						lastChecks[i] = time.Now()
 						check_performed = true
 					}

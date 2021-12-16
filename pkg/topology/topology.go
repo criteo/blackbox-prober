@@ -8,6 +8,9 @@ type ProbeableEndpoint interface {
 	GetName() string
 	// Connect is called to initiliaze connections to the remote database
 	Connect() error
+	// Refresh is called to refresh the states of the endpoint
+	// Can be used to check for new tables/namespaces/nodes
+	Refresh() error
 	// Close should terminate all connections to the remote database
 	Close() error
 }

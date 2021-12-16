@@ -31,6 +31,16 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		}
 		policy := as.NewWritePolicy(0, 0)
 
+		partition, err := as.PartitionForWrite(e.Client.Cluster(), &policy.BasePolicy, key)
+		if err != nil {
+			return err
+		}
+		node, err := partition.GetNodeWrite(e.Client.Cluster())
+		if err != nil {
+			return err
+		}
+		fmt.Println(node.GetHost(), node.GetName(), node.GetAliases())
+
 		err = e.Client.Put(policy, key, val)
 		if err != nil {
 			return fmt.Errorf("record put failed for: namespace=%s set=%s key=%v: %s", key.Namespace(), key.SetName(), key.Value(), err)

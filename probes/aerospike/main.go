@@ -105,11 +105,7 @@ func main() {
 		level.Error(logger).Log("msg", "Fatal: error during init of service discovery", "err", err)
 		os.Exit(2)
 	}
-	err = discoverer.Start()
-	if err != nil {
-		level.Error(logger).Log("msg", "Fatal: error during init of service discovery", "err", err)
-		os.Exit(2)
-	}
+	go discoverer.Start()
 
 	// Scheduler stuff
 	p := prober.NewProbingScheduler(log.With(logger, "component", "scheduler"), topo)

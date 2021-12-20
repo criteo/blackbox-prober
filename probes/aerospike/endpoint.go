@@ -3,8 +3,10 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
-	"log"
 	"regexp"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	as "github.com/aerospike/aerospike-client-go"
 )
@@ -17,6 +19,7 @@ type AerospikeEndpoint struct {
 	Name       string
 	Client     *as.Client
 	Config     AerospikeClientConfig
+	Logger     log.Logger
 	namespaces map[string]struct{}
 }
 
@@ -78,7 +81,7 @@ func (e *AerospikeEndpoint) Refresh() error {
 			}
 		}
 	}
-	log.Println("Refresh finished: current namespaces: ", e.namespaces)
+	level.Debug(e.Logger).Log("msg", fmt.Sprintf("Refresh finished: current namespaces: %s", e.namespaces))
 	return nil
 }
 

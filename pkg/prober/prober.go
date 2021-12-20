@@ -1,8 +1,11 @@
 package prober
 
 import (
-	"log"
+	"fmt"
 	"time"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/criteo/blackbox-prober/pkg/topology"
 )
@@ -29,6 +32,7 @@ func Noop(topology.ProbeableEndpoint) error {
 }
 
 type ProbingScheduler struct {
+	logger             log.Logger
 	currentTopology    topology.ClusterMap
 	topologyUpdateChan chan topology.ClusterMap
 	workerControlChans map[topology.ProbeableEndpoint]chan bool
@@ -36,12 +40,12 @@ type ProbingScheduler struct {
 	nodeChecks         []Check
 }
 
-func NewProbingScheduler(topologyUpdateChan chan topology.ClusterMap) ProbingScheduler {
+func NewProbingScheduler(logger log.Logger, topologyUpdateChan chan topology.ClusterMap) ProbingScheduler {
 	currentTopology := topology.NewClusterMap()
 	workerControlChans := make(map[topology.ProbeableEndpoint]chan bool)
 	clusterChecks := []Check{}
 	nodeChecks := []Check{}
-	return ProbingScheduler{currentTopology, topologyUpdateChan, workerControlChans, clusterChecks, nodeChecks}
+	return ProbingScheduler{logger, currentTopology, topologyUpdateChan, workerControlChans, clusterChecks, nodeChecks}
 }
 
 // RegisterNewClusterCheck add a new check at the cluster level
@@ -63,7 +67,7 @@ func (ps *ProbingScheduler) Start() {
 	for {
 		select {
 		case newTopology := <-ps.topologyUpdateChan:
-			log.Printf("New topology received, updating...")
+			level.Info(ps.logger).Log("msg", "New topology received, updating...")
 			// Flush all current probes and recreate everything
 			// this is very naive way of doing it that should be improved in the future
 			allEndpoints := []topology.ProbeableEndpoint{}
@@ -93,7 +97,7 @@ func (ps *ProbingScheduler) Start() {
 func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEndpoint) {
 	workerChan, ok := ps.workerControlChans[endpoint]
 	if ok {
-		log.Printf("Stopping probing on %s\n", endpoint.GetName())
+		level.Info(ps.logger).Log("msg", fmt.Sprintf("Stopping probing on %s\n", endpoint.GetName()))
 		workerChan <- false // Terminate workers
 		delete(ps.workerControlChans, endpoint)
 	}
@@ -101,22 +105,23 @@ func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEnd
 
 func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) {
 	wc := make(chan bool)
-	w := ProberWorker{endpoint: endpoint, checks: checks, controlChan: wc}
+	w := ProberWorker{logger: log.With(ps.logger, "component", "probe_worker", "name", endpoint.GetName()), endpoint: endpoint, checks: checks, controlChan: wc}
 	ps.workerControlChans[endpoint] = wc
 	go w.StartProbing()
 }
 
 type ProberWorker struct {
+	logger      log.Logger
 	endpoint    topology.ProbeableEndpoint
 	checks      []Check
 	controlChan chan bool
 }
 
 func (pw *ProberWorker) StartProbing() {
-	log.Printf("Starting probing on %s\n", pw.endpoint.GetName())
+	level.Info(pw.logger).Log("msg", "starting probing")
 
 	if len(pw.checks) < 1 {
-		log.Fatalf("Probe not started for %s: no checks registered\n", pw.endpoint.GetName())
+		level.Error(pw.logger).Log("msg", "Probe not started no checks registered")
 		return
 	}
 
@@ -125,7 +130,7 @@ func (pw *ProberWorker) StartProbing() {
 
 	err := pw.endpoint.Connect()
 	if err != nil {
-		log.Fatalln(err)
+		level.Error(pw.logger).Log("msg", "Probe failure during connection", "err", err)
 		return
 	}
 
@@ -145,25 +150,25 @@ func (pw *ProberWorker) StartProbing() {
 		// If we receive something on the control chan we terminate
 		// otherwise we continue to perform checks
 		case <-pw.controlChan:
-			log.Printf("Terminating probing on %s\n", pw.endpoint.GetName())
+			level.Info(pw.logger).Log("msg", "Probe terminated by the scheduler")
 			for _, check := range pw.checks {
 				check.TeardownFn(pw.endpoint)
 			}
 			return
 		case <-refreshTicker.C:
-			log.Printf("Refreshing %s\n", pw.endpoint.GetName())
+			level.Debug(pw.logger).Log("msg", "Probe endpoint refreshed")
 			pw.endpoint.Refresh()
 		case <-checkTicker.C:
-			log.Printf("Checking for work on %s\n", pw.endpoint.GetName())
+			level.Debug(pw.logger).Log("msg", "Checking for work")
 
 			for {
 				check_performed := false
 				for i, check := range pw.checks {
 					if lastChecks[i].Add(check.Interval).Before(time.Now()) {
-						log.Printf("Performing check %s on %s\n", check.Name, pw.endpoint.GetName())
+						level.Debug(pw.logger).Log("msg", fmt.Sprintf("Performing check %s", check.Name))
 						err = check.CheckFn(pw.endpoint)
 						if err != nil {
-							log.Println("Error while probing:", err)
+							level.Error(pw.logger).Log("msg", "Error while probing", "err", err)
 						}
 						lastChecks[i] = time.Now()
 						check_performed = true

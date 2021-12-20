@@ -1,7 +1,10 @@
 package discovery
 
 import (
-	"log"
+	"fmt"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/criteo/blackbox-prober/pkg/topology"
 )
@@ -29,20 +32,20 @@ var (
 )
 
 func (conf GenericDiscoveryConfig) GetGenericTopologyBuilder(
-	ClusterFn func([]ServiceEntry) (topology.ProbeableEndpoint, error),
-	NodeFn func(ServiceEntry) (topology.ProbeableEndpoint, error)) func([]ServiceEntry) (topology.ClusterMap, error) {
+	ClusterFn func(log.Logger, []ServiceEntry) (topology.ProbeableEndpoint, error),
+	NodeFn func(log.Logger, ServiceEntry) (topology.ProbeableEndpoint, error)) func(log.Logger, []ServiceEntry) (topology.ClusterMap, error) {
 
-	return func(entries []ServiceEntry) (topology.ClusterMap, error) {
+	return func(logger log.Logger, entries []ServiceEntry) (topology.ClusterMap, error) {
 		clusterMap := topology.NewClusterMap()
-		clusterEntries := conf.GroupNodesByCluster(entries)
+		clusterEntries := conf.GroupNodesByCluster(logger, entries)
 		for clusterName, entries := range clusterEntries {
-			clusterEndpoint, err := ClusterFn(entries)
+			clusterEndpoint, err := ClusterFn(logger, entries)
 			if err != nil {
 				return clusterMap, err
 			}
 			cluster := topology.NewCluster(clusterEndpoint)
 			for _, entry := range entries {
-				nodeEndpoint, err := NodeFn(entry)
+				nodeEndpoint, err := NodeFn(logger, entry)
 				if err != nil {
 					return clusterMap, err
 				}
@@ -54,13 +57,13 @@ func (conf GenericDiscoveryConfig) GetGenericTopologyBuilder(
 	}
 }
 
-func (conf GenericDiscoveryConfig) GroupNodesByCluster(entries []ServiceEntry) map[string][]ServiceEntry {
+func (conf GenericDiscoveryConfig) GroupNodesByCluster(logger log.Logger, entries []ServiceEntry) map[string][]ServiceEntry {
 	clusterEntries := make(map[string][]ServiceEntry)
 
 	for _, entry := range entries {
 		clusterName, ok := entry.Meta[conf.MetaClusterKey]
 		if !ok {
-			log.Printf("Skipped %s (in %s), missing cluster key: %s", entry.Address, entry.Service, conf.MetaClusterKey)
+			level.Warn(logger).Log("msg", fmt.Sprintf("Skipped %s (in %s), missing cluster key: %s", entry.Address, entry.Service, conf.MetaClusterKey))
 			continue
 		}
 

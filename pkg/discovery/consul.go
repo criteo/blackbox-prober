@@ -2,9 +2,12 @@ package discovery
 
 import (
 	"errors"
-	"log"
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	consul "github.com/hashicorp/consul/api"
@@ -14,13 +17,15 @@ import (
 type ConsulDiscoverer struct {
 	client *consul.Client
 	config ConsulConfig
+	logger log.Logger
 	// Function to build a topology out of service entries
-	topologyBuilderFn func([]ServiceEntry) (topology.ClusterMap, error)
+	topologyBuilderFn func(log.Logger, []ServiceEntry) (topology.ClusterMap, error)
 	// Chan where to send new topologies
 	topologyChan chan topology.ClusterMap
 }
 
-func NewConsulDiscoverer(config ConsulConfig, topologyChan chan topology.ClusterMap, topologyBuilderFn func([]ServiceEntry) (topology.ClusterMap, error)) (ConsulDiscoverer, error) {
+func NewConsulDiscoverer(logger log.Logger, config ConsulConfig, topologyChan chan topology.ClusterMap, topologyBuilderFn func(log.Logger, []ServiceEntry) (topology.ClusterMap, error)) (ConsulDiscoverer, error) {
+	level.Info(logger).Log("msg", "Initialization of Consul service discovery")
 	wrapper, err := promconfig.NewClientFromConfig(config.HTTPClientConfig, "consul_sd")
 	if err != nil {
 		return ConsulDiscoverer{}, err
@@ -45,10 +50,11 @@ func NewConsulDiscoverer(config ConsulConfig, topologyChan chan topology.Cluster
 		return ConsulDiscoverer{}, err
 	}
 
-	return ConsulDiscoverer{client: client, config: config, topologyBuilderFn: topologyBuilderFn, topologyChan: topologyChan}, nil
+	return ConsulDiscoverer{logger: logger, client: client, config: config, topologyBuilderFn: topologyBuilderFn, topologyChan: topologyChan}, nil
 }
 
 func (cd ConsulDiscoverer) Start() error {
+	level.Info(cd.logger).Log("msg", "Starting Consul service discovery")
 	catalog := cd.client.Catalog()
 	health := cd.client.Health()
 
@@ -70,7 +76,7 @@ func (cd ConsulDiscoverer) Start() error {
 		}
 	}
 
-	log.Println("Found following services:", matchedServices)
+	level.Debug(cd.logger).Log("msg", fmt.Sprintln("Found following services in Consul SD:", matchedServices))
 
 	allServiceEntries := []ServiceEntry{}
 	// Check for removed services.
@@ -84,11 +90,12 @@ func (cd ConsulDiscoverer) Start() error {
 		}
 	}
 
-	clusterMap, err := cd.topologyBuilderFn(allServiceEntries)
+	clusterMap, err := cd.topologyBuilderFn(cd.logger, allServiceEntries)
 	if err != nil {
 		return err
 	}
 	// Send the new topology to the scheduler
+	level.Info(cd.logger).Log("msg", "Sending new topology update")
 	cd.topologyChan <- clusterMap
 	return nil
 }

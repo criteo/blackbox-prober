@@ -97,7 +97,7 @@ func (ps *ProbingScheduler) Start() {
 func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEndpoint) {
 	workerChan, ok := ps.workerControlChans[endpoint]
 	if ok {
-		level.Info(ps.logger).Log("msg", fmt.Sprintf("Stopping probing on %s\n", endpoint.GetName()))
+		level.Info(ps.logger).Log("msg", fmt.Sprintf("Stopping probing on %s", endpoint.GetName()))
 		workerChan <- false // Terminate workers
 		delete(ps.workerControlChans, endpoint)
 	}

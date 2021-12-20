@@ -5,9 +5,17 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/criteo/blackbox-prober/pkg/topology"
+	"github.com/criteo/blackbox-prober/pkg/utils"
 )
+
+var DiscoveryFailureTotal = promauto.NewCounter(prometheus.CounterOpts{
+	Name: utils.MetricSuffix + "_discovery_failure",
+	Help: "Total number of failures during discovery",
+})
 
 type ServiceEntry struct {
 	Service string

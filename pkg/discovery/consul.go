@@ -53,8 +53,28 @@ func NewConsulDiscoverer(logger log.Logger, config ConsulConfig, topologyChan ch
 	return ConsulDiscoverer{logger: logger, client: client, config: config, topologyBuilderFn: topologyBuilderFn, topologyChan: topologyChan}, nil
 }
 
-func (cd ConsulDiscoverer) Start() error {
+func (cd *ConsulDiscoverer) Start() error {
 	level.Info(cd.logger).Log("msg", "Starting Consul service discovery")
+
+	refreshTicker := time.NewTicker(cd.config.RefreshInterval)
+
+	err := cd.UpdateTopology()
+	if err != nil {
+		DiscoveryFailureTotal.Inc()
+	}
+
+	for {
+		select {
+		case <-refreshTicker.C:
+			err = cd.UpdateTopology()
+			if err != nil {
+				DiscoveryFailureTotal.Inc()
+			}
+		}
+	}
+}
+
+func (cd *ConsulDiscoverer) UpdateTopology() error {
 	catalog := cd.client.Catalog()
 	health := cd.client.Health()
 

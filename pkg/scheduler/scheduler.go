@@ -73,24 +73,24 @@ func (ps *ProbingScheduler) Start() {
 		select {
 		case newTopology := <-ps.topologyUpdateChan:
 			level.Info(ps.logger).Log("msg", "New topology received, updating...")
-			// Flush all current probes and recreate everything
-			// this is very naive way of doing it that should be improved in the future
-			allEndpoints := []topology.ProbeableEndpoint{}
-			for _, cluster := range ps.currentTopology.GetAllClusters() {
-				allEndpoints = append(allEndpoints, cluster.ClusterEndpoint)
-				allEndpoints = append(allEndpoints, cluster.GetAllEndpoints()...)
-			}
-			for _, endpoint := range allEndpoints {
+
+			toStopendpoints, toAddEndpoints := ps.currentTopology.Diff(&newTopology)
+			for _, endpoint := range toStopendpoints {
 				ps.stopWorkerForEndpoint(endpoint)
 			}
 
-			for _, cluster := range newTopology.GetAllClusters() {
-				if len(ps.clusterChecks) > 0 {
-					ps.startNewWorker(cluster.ClusterEndpoint, ps.clusterChecks)
-				}
-				for _, endpoint := range cluster.GetAllEndpoints() {
+			for _, endpoint := range toAddEndpoints {
+				if endpoint.IsCluster() {
+					if len(ps.clusterChecks) > 0 {
+						ps.startNewWorker(endpoint, ps.clusterChecks)
+					} else {
+						level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no cluster checks defined", endpoint.GetName()))
+					}
+				} else {
 					if len(ps.nodeChecks) > 0 {
 						ps.startNewWorker(endpoint, ps.nodeChecks)
+					} else {
+						level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no node checks defined", endpoint.GetName()))
 					}
 				}
 			}

@@ -66,6 +66,7 @@ func (conf AerospikeProbeConfig) generateClusterFromEntries(logger log.Logger, e
 	}
 	endpoint.Name = entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
 	endpoint.Logger = log.With(logger, "endpoint_name", endpoint.Name)
+	endpoint.clusterLevel = true
 	return endpoint, nil
 }
 

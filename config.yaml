@@ -9,3 +9,8 @@ discovery:
       refresh_interval: 30s
       services:
       - aerospike
+client_config: {}
+checks_configs:
+  latency_check:
+    enable: true
+    interval: 1s

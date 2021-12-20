@@ -6,9 +6,32 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/criteo/blackbox-prober/pkg/topology"
+	"github.com/criteo/blackbox-prober/pkg/utils"
 )
+
+var EndpointFailureTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: utils.MetricSuffix + "_scheduler_endpoint_failure",
+	Help: "Total number of failures during scheduling for an endpoint",
+}, []string{"func", "endpoint_name"})
+
+var EndpointSuccessTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: utils.MetricSuffix + "_scheduler_endpoint_success",
+	Help: "Total number of successful operations during scheduling for an endpoint",
+}, []string{"func", "endpoint_name"})
+
+var CheckSuccessTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: utils.MetricSuffix + "_scheduler_check_success",
+	Help: "Total number of successful checks call during scheduling",
+}, []string{"func", "endpoint_name", "check_name"})
+
+var CheckFailureTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: utils.MetricSuffix + "_scheduler_check_failure",
+	Help: "Total number of check failures during scheduling",
+}, []string{"func", "endpoint_name", "check_name"})
 
 type Check struct {
 	// Name of the check
@@ -157,12 +180,24 @@ func (pw *ProberWorker) StartProbing() {
 		case <-pw.controlChan:
 			level.Info(pw.logger).Log("msg", "Probe terminated by the scheduler")
 			for _, check := range pw.checks {
-				check.TeardownFn(pw.endpoint)
+				err = check.TeardownFn(pw.endpoint)
+				if err != nil {
+					level.Error(pw.logger).Log("msg", "Error while tearingdown", "err", err)
+					CheckFailureTotal.WithLabelValues("teardown", pw.endpoint.GetName(), check.Name)
+				} else {
+					CheckSuccessTotal.WithLabelValues("teardown", pw.endpoint.GetName(), check.Name)
+				}
 			}
 			return
 		case <-refreshTicker.C:
 			level.Debug(pw.logger).Log("msg", "Probe endpoint refreshed")
-			pw.endpoint.Refresh()
+			err := pw.endpoint.Refresh()
+			if err != nil {
+				level.Error(pw.logger).Log("msg", "Error while refreshing", "err", err)
+				EndpointFailureTotal.WithLabelValues("refresh", pw.endpoint.GetName())
+			} else {
+				EndpointSuccessTotal.WithLabelValues("refresh", pw.endpoint.GetName())
+			}
 		case <-checkTicker.C:
 			level.Debug(pw.logger).Log("msg", "Checking for work")
 
@@ -173,7 +208,10 @@ func (pw *ProberWorker) StartProbing() {
 						level.Debug(pw.logger).Log("msg", fmt.Sprintf("Performing check %s", check.Name))
 						err = check.CheckFn(pw.endpoint)
 						if err != nil {
+							CheckFailureTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
 							level.Error(pw.logger).Log("msg", "Error while probing", "err", err)
+						} else {
+							CheckSuccessTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
 						}
 						lastChecks[i] = time.Now()
 						check_performed = true

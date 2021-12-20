@@ -132,16 +132,44 @@ func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEnd
 
 func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) {
 	wc := make(chan bool)
-	w := ProberWorker{logger: log.With(ps.logger, "endpoint_name", endpoint.GetName()), endpoint: endpoint, checks: checks, controlChan: wc}
+	w := ProberWorker{logger: log.With(ps.logger, "endpoint_name", endpoint.GetName()),
+		endpoint: endpoint, checks: checks,
+		controlChan: wc, refreshInterval: 30 * time.Second}
 	ps.workerControlChans[endpoint] = wc
 	go w.StartProbing()
 }
 
 type ProberWorker struct {
-	logger      log.Logger
-	endpoint    topology.ProbeableEndpoint
-	checks      []Check
-	controlChan chan bool
+	logger          log.Logger
+	endpoint        topology.ProbeableEndpoint
+	refreshInterval time.Duration
+	checks          []Check
+	controlChan     chan bool
+}
+
+func (pw *ProberWorker) findWork(lastChecks []time.Time) {
+	for {
+		check_performed := false
+		for i, check := range pw.checks {
+			if lastChecks[i].Add(check.Interval).Before(time.Now()) {
+				level.Debug(pw.logger).Log("msg", fmt.Sprintf("Performing check %s", check.Name))
+				err := check.CheckFn(pw.endpoint)
+				if err != nil {
+					CheckFailureTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
+					level.Error(pw.logger).Log("msg", "Error while probing", "err", err)
+				} else {
+					CheckSuccessTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
+				}
+				lastChecks[i] = time.Now()
+				check_performed = true
+			}
+		}
+		// If we have performed a check it means we lost some time
+		// We should check for available work before going to sleep again
+		if !check_performed {
+			break
+		}
+	}
 }
 
 func (pw *ProberWorker) StartProbing() {
@@ -170,7 +198,7 @@ func (pw *ProberWorker) StartProbing() {
 	}
 
 	checkTicker := time.NewTicker(shortestInterval)
-	refreshTicker := time.NewTicker(30 * time.Second)
+	refreshTicker := time.NewTicker(pw.refreshInterval)
 
 	for {
 		select {
@@ -198,30 +226,9 @@ func (pw *ProberWorker) StartProbing() {
 				EndpointSuccessTotal.WithLabelValues("refresh", pw.endpoint.GetName())
 			}
 		case <-checkTicker.C:
+			fmt.Println("Called")
 			level.Debug(pw.logger).Log("msg", "Checking for work")
-
-			for {
-				check_performed := false
-				for i, check := range pw.checks {
-					if lastChecks[i].Add(check.Interval).Before(time.Now()) {
-						level.Debug(pw.logger).Log("msg", fmt.Sprintf("Performing check %s", check.Name))
-						err = check.CheckFn(pw.endpoint)
-						if err != nil {
-							CheckFailureTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
-							level.Error(pw.logger).Log("msg", "Error while probing", "err", err)
-						} else {
-							CheckSuccessTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
-						}
-						lastChecks[i] = time.Now()
-						check_performed = true
-					}
-				}
-				// If we have performed a check it means we lost some time
-				// We should check for available work before going to sleep again
-				if !check_performed {
-					break
-				}
-			}
+			pw.findWork(lastChecks)
 		}
 	}
 }

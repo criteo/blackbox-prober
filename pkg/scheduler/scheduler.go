@@ -93,32 +93,31 @@ func (ps *ProbingScheduler) RegisterNewNodeCheck(check Check) {
 // - start and stop probes
 func (ps *ProbingScheduler) Start() {
 	for {
-		select {
-		case newTopology := <-ps.topologyUpdateChan:
-			level.Info(ps.logger).Log("msg", "New topology received, updating...")
+		newTopology := <-ps.topologyUpdateChan
 
-			toStopendpoints, toAddEndpoints := ps.currentTopology.Diff(&newTopology)
-			for _, endpoint := range toStopendpoints {
-				ps.stopWorkerForEndpoint(endpoint)
-			}
+		level.Info(ps.logger).Log("msg", "New topology received, updating...")
 
-			for _, endpoint := range toAddEndpoints {
-				if endpoint.IsCluster() {
-					if len(ps.clusterChecks) > 0 {
-						ps.startNewWorker(endpoint, ps.clusterChecks)
-					} else {
-						level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no cluster checks defined", endpoint.GetName()))
-					}
+		toStopendpoints, toAddEndpoints := ps.currentTopology.Diff(&newTopology)
+		for _, endpoint := range toStopendpoints {
+			ps.stopWorkerForEndpoint(endpoint)
+		}
+
+		for _, endpoint := range toAddEndpoints {
+			if endpoint.IsCluster() {
+				if len(ps.clusterChecks) > 0 {
+					ps.startNewWorker(endpoint, ps.clusterChecks)
 				} else {
-					if len(ps.nodeChecks) > 0 {
-						ps.startNewWorker(endpoint, ps.nodeChecks)
-					} else {
-						level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no node checks defined", endpoint.GetName()))
-					}
+					level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no cluster checks defined", endpoint.GetName()))
+				}
+			} else {
+				if len(ps.nodeChecks) > 0 {
+					ps.startNewWorker(endpoint, ps.nodeChecks)
+				} else {
+					level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no node checks defined", endpoint.GetName()))
 				}
 			}
-			ps.currentTopology = newTopology
 		}
+		ps.currentTopology = newTopology
 	}
 }
 

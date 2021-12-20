@@ -24,7 +24,9 @@ type ConsulDiscoverer struct {
 	topologyChan chan topology.ClusterMap
 }
 
-func NewConsulDiscoverer(logger log.Logger, config ConsulConfig, topologyChan chan topology.ClusterMap, topologyBuilderFn func(log.Logger, []ServiceEntry) (topology.ClusterMap, error)) (ConsulDiscoverer, error) {
+func NewConsulDiscoverer(logger log.Logger, config ConsulConfig, topologyChan chan topology.ClusterMap,
+	topologyBuilderFn func(log.Logger, []ServiceEntry) (topology.ClusterMap, error)) (ConsulDiscoverer, error) {
+
 	level.Info(logger).Log("msg", "Initialization of Consul service discovery")
 	wrapper, err := promconfig.NewClientFromConfig(config.HTTPClientConfig, "consul_sd")
 	if err != nil {
@@ -64,12 +66,10 @@ func (cd *ConsulDiscoverer) Start() error {
 	}
 
 	for {
-		select {
-		case <-refreshTicker.C:
-			err = cd.UpdateTopology()
-			if err != nil {
-				DiscoveryFailureTotal.Inc()
-			}
+		<-refreshTicker.C
+		err = cd.UpdateTopology()
+		if err != nil {
+			DiscoveryFailureTotal.Inc()
 		}
 	}
 }

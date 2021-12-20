@@ -3,6 +3,7 @@ package main
 import (
 	as "github.com/aerospike/aerospike-client-go"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
+	"github.com/criteo/blackbox-prober/pkg/prober"
 )
 
 // Config used to configure the client of Aerospike
@@ -64,5 +65,10 @@ type AerospikeProbeConfig struct {
 	DiscoveryConfig discovery.GenericDiscoveryConfig `yaml:"discovery,omitempty"`
 	// Client configuration
 	AerospikeEndpointConfig AerospikeEndpointConfig `yaml:"client_config,omitempty"`
-	// Will include check configs
+	// Check configurations
+	AerospikeChecksConfigs AerospikeChecksConfigs `yaml:"checks_configs,omitempty"`
+}
+
+type AerospikeChecksConfigs struct {
+	LatencyCheckConfig prober.CheckConfig `yaml:"latency_check,omitempty"`
 }

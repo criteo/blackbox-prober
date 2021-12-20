@@ -100,7 +100,7 @@ func main() {
 
 	// DISCO stuff
 	topo := make(chan topology.ClusterMap, 1)
-	discoverer, err := discovery.NewConsulDiscoverer(log.With(logger, "component", "discovery"), config.DiscoveryConfig.ConsulConfig, topo, config.generateTopologyBuilder())
+	discoverer, err := discovery.NewConsulDiscoverer(log.With(logger), config.DiscoveryConfig.ConsulConfig, topo, config.generateTopologyBuilder())
 	if err != nil {
 		level.Error(logger).Log("msg", "Fatal: error during init of service discovery", "err", err)
 		os.Exit(2)
@@ -108,8 +108,17 @@ func main() {
 	go discoverer.Start()
 
 	// Scheduler stuff
-	p := prober.NewProbingScheduler(log.With(logger, "component", "scheduler"), topo)
-	check := prober.Check{"Cluster check", prober.Noop, LatencyCheck, prober.Noop, 10 * time.Second}
-	p.RegisterNewClusterCheck(check)
+	p := prober.NewProbingScheduler(log.With(logger), topo)
+
+	if config.AerospikeChecksConfigs.LatencyCheckConfig.Enable {
+		p.RegisterNewClusterCheck(prober.Check{
+			Name:       "latency_check",
+			PrepareFn:  prober.Noop,
+			CheckFn:    LatencyCheck,
+			TeardownFn: prober.Noop,
+			Interval:   config.AerospikeChecksConfigs.LatencyCheckConfig.Interval,
+		})
+	}
+
 	p.Start()
 }

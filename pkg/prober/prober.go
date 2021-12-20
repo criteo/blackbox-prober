@@ -26,6 +26,11 @@ type Check struct {
 	Interval time.Duration
 }
 
+type CheckConfig struct {
+	Enable   bool          `yaml:"enable,omitempty"`
+	Interval time.Duration `yaml:"interval,omitempty"`
+}
+
 // Noop do nothing. It is a noop function to use in a check when there is nothing to do
 func Noop(topology.ProbeableEndpoint) error {
 	return nil
@@ -105,7 +110,7 @@ func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEnd
 
 func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) {
 	wc := make(chan bool)
-	w := ProberWorker{logger: log.With(ps.logger, "component", "probe_worker", "name", endpoint.GetName()), endpoint: endpoint, checks: checks, controlChan: wc}
+	w := ProberWorker{logger: log.With(ps.logger, "endpoint_name", endpoint.GetName()), endpoint: endpoint, checks: checks, controlChan: wc}
 	ps.workerControlChans[endpoint] = wc
 	go w.StartProbing()
 }

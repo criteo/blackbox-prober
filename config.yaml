@@ -9,7 +9,22 @@ discovery:
       refresh_interval: 30s
       services:
       - aerospike
-client_config: {}
+client_config:
+  ### AUTH ###
+  # Enable authentication
+	auth_enabled: true
+  # Use external authentication (https://docs.aerospike.com/docs/guide/security/access-control.html#external-authentication-with-ldap)
+	auth_external: true
+  # Env variable to use to retrieve the credentials
+  username_env: "AEROSPIKE_USERNAME"
+	password_env: "AEROSPIKE_PASSWORD"
+  ### TLS ###
+  # Tag to use in the discovery to determine wether or not the probe should connect to cluster in SSL
+  tls_tag: "tls"
+  # Meta key to find the tls-hostname to use for SSL cert validation
+	TLSHostnameMetaKey: "tls-hostname",
+  # Skip ssl verification
+	tls_skip_verify: false 
 checks_configs:
   latency_check:
     enable: true

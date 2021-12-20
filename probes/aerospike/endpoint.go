@@ -16,19 +16,24 @@ var (
 )
 
 type AerospikeEndpoint struct {
-	Name       string
-	Client     *as.Client
-	Config     AerospikeClientConfig
-	Logger     log.Logger
-	namespaces map[string]struct{}
+	Name         string
+	clusterLevel bool
+	Client       *as.Client
+	Config       AerospikeClientConfig
+	Logger       log.Logger
+	namespaces   map[string]struct{}
 }
 
-func (e *AerospikeEndpoint) Hash() string {
+func (e *AerospikeEndpoint) GetHash() string {
 	return e.Name
 }
 
 func (e *AerospikeEndpoint) GetName() string {
 	return e.Name
+}
+
+func (e *AerospikeEndpoint) IsCluster() bool {
+	return e.clusterLevel
 }
 
 func (e *AerospikeEndpoint) Connect() error {

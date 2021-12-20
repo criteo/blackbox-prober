@@ -46,7 +46,7 @@ func (conf GenericDiscoveryConfig) GetGenericTopologyBuilder(
 	return func(logger log.Logger, entries []ServiceEntry) (topology.ClusterMap, error) {
 		clusterMap := topology.NewClusterMap()
 		clusterEntries := conf.GroupNodesByCluster(logger, entries)
-		for clusterName, entries := range clusterEntries {
+		for _, entries := range clusterEntries {
 			clusterEndpoint, err := ClusterFn(logger, entries)
 			if err != nil {
 				return clusterMap, err
@@ -59,7 +59,7 @@ func (conf GenericDiscoveryConfig) GetGenericTopologyBuilder(
 				}
 				cluster.AddEndpoint(nodeEndpoint)
 			}
-			clusterMap.Clusters[clusterName] = cluster
+			clusterMap.AppendCluster(cluster)
 		}
 		return clusterMap, nil
 	}

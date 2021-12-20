@@ -71,10 +71,17 @@ The prober will schedule checks (either cluster or node level) for each endpoint
 
 # Adding your own probe
 
+## Conventions
+
+Metrics should use seconds as unit or prefix with the unit (`_ms`) 
+
+
+## Implementations
+
 Probes are defined in the probes/\<name of db\> directory.
 The probes have to define 3 things:
 
-## Endpoints
+### Endpoints
 
 A implementation of the `toplogy.ProbeableEndpoint`. It contains the client 
 (and everything necessary) to connect to the database. State, locks or
@@ -83,7 +90,7 @@ latencies.
 
 See [probes/aerospike/endpoint.go](probes/aerospike/endpoint.go) for an example
 
-## Endpoint builder
+### Endpoint builder
 
 The discovery is responsible for creating the topology. When creating a
 discoverer, a builder function should be provided: 
@@ -102,7 +109,7 @@ GetGenericTopologyBuilder(
 
 See [probes/aerospike/discovery.go](probes/aerospike/discovery.go) for an example
 
-## Checks
+### Checks
 
 Example:
 ```

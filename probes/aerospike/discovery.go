@@ -51,7 +51,7 @@ func (conf AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.L
 		tlsSkipVerify: conf.AerospikeEndpointConfig.TLSSkipVerify,
 		// Contact point
 		host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port}},
-		Logger: log.With(logger, "component", "endpoint", "name", entry.Address),
+		Logger: log.With(logger, "endpoint_name", entry.Address),
 	}, nil
 }
 
@@ -65,7 +65,7 @@ func (conf AerospikeProbeConfig) generateClusterFromEntries(logger log.Logger, e
 		return endpoint, err
 	}
 	endpoint.Name = entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
-	endpoint.Logger = log.With(logger, "component", "endpoint", "name", endpoint.Name)
+	endpoint.Logger = log.With(logger, "endpoint_name", endpoint.Name)
 	return endpoint, nil
 }
 

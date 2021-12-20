@@ -31,7 +31,7 @@ func AddFlags(a *kingpin.Application, cfg *ProbeConfig) {
 	promlogflag.AddFlags(a, &cfg.LogConfig)
 }
 
-func (cfg *ProbeConfig) ParseConfigFile(config interface{}) {
+func (cfg *ProbeConfig) ParseConfigFile(config interface{}) error {
 	logger := cfg.GetLogger()
 	level.Info(logger).Log("msg", fmt.Sprintf("Parsing the configuration file (--config.path=%s)", cfg.ConfigPath))
 	configData, err := ioutil.ReadFile(cfg.ConfigPath)
@@ -39,7 +39,7 @@ func (cfg *ProbeConfig) ParseConfigFile(config interface{}) {
 		level.Error(logger).Log("msg", fmt.Sprintf("Failed to parse the configuration file (--config.path=%s)", cfg.ConfigPath), "err", err)
 		os.Exit(2)
 	}
-	yaml.Unmarshal(configData, config)
+	return yaml.Unmarshal(configData, config)
 }
 
 func (cfg *ProbeConfig) GetLogger() log.Logger {

@@ -13,7 +13,8 @@ import (
 	as "github.com/aerospike/aerospike-client-go"
 	"github.com/criteo/blackbox-prober/pkg/common"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
-	"github.com/criteo/blackbox-prober/pkg/prober"
+	"github.com/criteo/blackbox-prober/pkg/scheduler"
+
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
 	"github.com/pkg/errors"
@@ -108,14 +109,14 @@ func main() {
 	go discoverer.Start()
 
 	// Scheduler stuff
-	p := prober.NewProbingScheduler(log.With(logger), topo)
+	p := scheduler.NewProbingScheduler(log.With(logger), topo)
 
 	if config.AerospikeChecksConfigs.LatencyCheckConfig.Enable {
-		p.RegisterNewClusterCheck(prober.Check{
+		p.RegisterNewClusterCheck(scheduler.Check{
 			Name:       "latency_check",
-			PrepareFn:  prober.Noop,
+			PrepareFn:  scheduler.Noop,
 			CheckFn:    LatencyCheck,
-			TeardownFn: prober.Noop,
+			TeardownFn: scheduler.Noop,
 			Interval:   config.AerospikeChecksConfigs.LatencyCheckConfig.Interval,
 		})
 	}

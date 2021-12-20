@@ -5,6 +5,11 @@ import (
 	"encoding/hex"
 )
 
+var (
+	MetricSuffix           = "blackbox_prober"
+	MetricHistogramBuckets = []float64{.001, .0025, .005, .010, .015, .020, .025, .030, .040, .050, .060, .075, .100, .250, .500, 1, 2.5, 5, 10, 15, 30, 45, 60}
+)
+
 func Contains(s []string, e string) bool {
 	for _, a := range s {
 		if a == e {

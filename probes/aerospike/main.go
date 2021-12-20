@@ -97,7 +97,11 @@ func main() {
 
 	// Parse config file
 	config := AerospikeProbeConfig{}
-	cfg.ParseConfigFile(&config)
+	err = cfg.ParseConfigFile(&config)
+	if err != nil {
+		level.Error(logger).Log("msg", "Fatal: error during parsing of config file", "err", err)
+		os.Exit(2)
+	}
 
 	// DISCO stuff
 	topo := make(chan topology.ClusterMap, 1)

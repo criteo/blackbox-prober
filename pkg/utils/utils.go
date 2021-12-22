@@ -24,7 +24,7 @@ func RandomHex(n int) string {
 	if _, err := rand.Read(bytes); err != nil {
 		PanicOnError(err)
 	}
-	return hex.EncodeToString(bytes)
+	return hex.EncodeToString(bytes)[0:n]
 }
 
 func PanicOnError(err error) {

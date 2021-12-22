@@ -29,7 +29,7 @@ Useful to calculate SLIs about a whole cluster (such as durability)
 
 ### Building
 ```
-go build -o build/aerospike_probe probes/aerospike/*.go
+make build
 ```
 
 ### Running
@@ -51,7 +51,7 @@ Flags:
 ### Testing
 
 ```
-go test ./... 
+make test
 ```
 
 # Architecture

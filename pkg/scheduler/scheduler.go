@@ -97,8 +97,8 @@ func (ps *ProbingScheduler) Start() {
 
 		level.Info(ps.logger).Log("msg", "New topology received, updating...")
 
-		toStopendpoints, toAddEndpoints := ps.currentTopology.Diff(&newTopology)
-		for _, endpoint := range toStopendpoints {
+		toStopEndpoints, toAddEndpoints := ps.currentTopology.Diff(&newTopology)
+		for _, endpoint := range toStopEndpoints {
 			ps.stopWorkerForEndpoint(endpoint)
 		}
 

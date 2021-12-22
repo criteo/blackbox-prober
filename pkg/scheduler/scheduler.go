@@ -6,12 +6,18 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
 )
+
+var SchedulerFailureTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: utils.MetricSuffix + "_scheduler_failure",
+	Help: "Total number of failures during scheduling",
+}, []string{"endpoint_name"})
 
 var EndpointFailureTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: utils.MetricSuffix + "_scheduler_endpoint_failure",
@@ -105,13 +111,23 @@ func (ps *ProbingScheduler) Start() {
 		for _, endpoint := range toAddEndpoints {
 			if endpoint.IsCluster() {
 				if len(ps.clusterChecks) > 0 {
-					ps.startNewWorker(endpoint, ps.clusterChecks)
+					err := ps.startNewWorker(endpoint, ps.clusterChecks)
+					if err != nil {
+						level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
+						SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
+						continue
+					}
 				} else {
 					level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no cluster checks defined", endpoint.GetName()))
 				}
 			} else {
 				if len(ps.nodeChecks) > 0 {
-					ps.startNewWorker(endpoint, ps.nodeChecks)
+					err := ps.startNewWorker(endpoint, ps.nodeChecks)
+					if err != nil {
+						level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
+						SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
+						continue
+					}
 				} else {
 					level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no node checks defined", endpoint.GetName()))
 				}
@@ -130,13 +146,20 @@ func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEnd
 	}
 }
 
-func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) {
+func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) error {
 	wc := make(chan bool)
 	w := ProberWorker{logger: log.With(ps.logger, "endpoint_name", endpoint.GetName()),
 		endpoint: endpoint, checks: checks,
 		controlChan: wc, refreshInterval: 30 * time.Second}
+
+	err := w.endpoint.Connect()
+	if err != nil {
+		return errors.Wrapf(err, "Init failure during connection to endpoint %s", w.endpoint.GetHash())
+	}
+
 	ps.workerControlChans[endpoint] = wc
 	go w.StartProbing()
+	return nil
 }
 
 type ProberWorker struct {
@@ -181,13 +204,12 @@ func (pw *ProberWorker) StartProbing() {
 	}
 
 	lastChecks := make([]time.Time, len(pw.checks))
+	// shortestInterval will be used as ticker for all checks.
+	// findWork will then check if we have a check that is ready to be processed.
+	// (that we waited enough time since last check run)
+	// It means that the interval between each check might not be exact.
+	// This is done because in Go we cannot wait against an arbitrary number of ticker
 	shortestInterval := pw.checks[0].Interval
-
-	err := pw.endpoint.Connect()
-	if err != nil {
-		level.Error(pw.logger).Log("msg", "Probe failure during connection", "err", err)
-		return
-	}
 
 	for i, check := range pw.checks {
 		lastChecks[i] = time.Now()
@@ -207,7 +229,7 @@ func (pw *ProberWorker) StartProbing() {
 		case <-pw.controlChan:
 			level.Info(pw.logger).Log("msg", "Probe terminated by the scheduler")
 			for _, check := range pw.checks {
-				err = check.TeardownFn(pw.endpoint)
+				err := check.TeardownFn(pw.endpoint)
 				if err != nil {
 					level.Error(pw.logger).Log("msg", "Error while tearingdown", "err", err)
 					CheckFailureTotal.WithLabelValues("teardown", pw.endpoint.GetName(), check.Name)

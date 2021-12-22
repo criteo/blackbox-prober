@@ -69,6 +69,7 @@ func (cd *ConsulDiscoverer) Start() error {
 		<-refreshTicker.C
 		err = cd.UpdateTopology()
 		if err != nil {
+			level.Error(cd.logger).Log("msg", "Failed to update topology", "err", err)
 			DiscoveryFailureTotal.Inc()
 		}
 	}

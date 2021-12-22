@@ -14,38 +14,6 @@ func TestDiffWorksWithEmptyMap(t *testing.T) {
 	}
 }
 
-func TestGetAllClustersWorks(t *testing.T) {
-	m := NewClusterMap()
-	oldCluster1 := NewCluster(DummyEndpoint{Name: "old_cluster1", Hash: "old_cluster1"})
-	oldCluster2 := NewCluster(DummyEndpoint{Name: "old_cluster2", Hash: "old_cluster2"})
-	m.AppendCluster(oldCluster1)
-	m.AppendCluster(oldCluster2)
-	clusters := m.GetAllClusters()
-	sort.Slice(clusters, func(i, j int) bool {
-		return clusters[i].ClusterEndpoint.GetHash() < clusters[j].ClusterEndpoint.GetHash()
-	})
-	if len(clusters) != 2 ||
-		clusters[0].ClusterEndpoint.GetHash() != "old_cluster1" ||
-		clusters[1].ClusterEndpoint.GetHash() != "old_cluster2" {
-		t.Errorf("GetAllClusters didn't list all clusters: %s", clusters)
-	}
-}
-
-func TestGetAllEndpointsWorks(t *testing.T) {
-	c := NewCluster(DummyEndpoint{Name: "old_cluster1", Hash: "old_cluster1"})
-	c.AddEndpoint(DummyEndpoint{Name: "endpoint1", Hash: "endpoint1"})
-	c.AddEndpoint(DummyEndpoint{Name: "endpoint2", Hash: "endpoint2"})
-	endpoints := c.GetAllEndpoints()
-	sort.Slice(endpoints, func(i, j int) bool {
-		return endpoints[i].GetHash() < endpoints[j].GetHash()
-	})
-	if len(endpoints) != 2 ||
-		endpoints[0].GetHash() != "endpoint1" ||
-		endpoints[1].GetHash() != "endpoint2" {
-		t.Errorf("GetAllEndpoints didn't list all endpoints: %s", endpoints)
-	}
-}
-
 func TestDiffWorksOnSingleCluster(t *testing.T) {
 	oldCluster := NewCluster(DummyEndpoint{Name: "old_cluster", Hash: "old_cluster1"})
 	oldCluster.AddEndpoint(DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint1"})

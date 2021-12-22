@@ -8,7 +8,7 @@ type ProbeableEndpoint interface {
 	GetName() string
 	// IsCluster return true if the endpoint is cluster endpoint, false if node
 	IsCluster() bool
-	// Connect is called to initiliaze connections to the remote database
+	// Connect is called to initialize connections to the remote database
 	Connect() error
 	// Refresh is called to refresh the states of the endpoint
 	// Can be used to check for new tables/namespaces/nodes
@@ -57,15 +57,8 @@ func NewClusterMap() ClusterMap {
 	return ClusterMap{Clusters: c}
 }
 
-func (gt *ClusterMap) AppendCluster(cluster Cluster) {
-	gt.Clusters[cluster.ClusterEndpoint.GetHash()] = cluster
-}
-
-func (gt *ClusterMap) GetAllClusters() (clusters []Cluster) {
-	for _, cluster := range gt.Clusters {
-		clusters = append(clusters, cluster)
-	}
-	return clusters
+func (cm *ClusterMap) AppendCluster(cluster Cluster) {
+	cm.Clusters[cluster.ClusterEndpoint.GetHash()] = cluster
 }
 
 // Diff make the intersection between two clusters and return:
@@ -83,14 +76,14 @@ func (oldMap *ClusterMap) Diff(newMap *ClusterMap) (oldEndpoints []ProbeableEndp
 		}
 		oldCluster := oldMap.Clusters[clusterName]
 
-		for nodeName := range oldCluster.NodeEndpoints {
-			if _, ok := newCluster.NodeEndpoints[nodeName]; !ok {
-				oldEndpoints = append(oldEndpoints, oldCluster.NodeEndpoints[nodeName])
+		for nodeHash := range oldCluster.NodeEndpoints {
+			if _, ok := newCluster.NodeEndpoints[nodeHash]; !ok {
+				oldEndpoints = append(oldEndpoints, oldCluster.NodeEndpoints[nodeHash])
 			}
 		}
-		for nodeName := range newCluster.NodeEndpoints {
-			if _, ok := oldCluster.NodeEndpoints[nodeName]; !ok {
-				newEndpoints = append(newEndpoints, newCluster.NodeEndpoints[nodeName])
+		for nodeHash := range newCluster.NodeEndpoints {
+			if _, ok := oldCluster.NodeEndpoints[nodeHash]; !ok {
+				newEndpoints = append(newEndpoints, newCluster.NodeEndpoints[nodeHash])
 			}
 		}
 	}
@@ -129,11 +122,4 @@ func NewCluster(cluster ProbeableEndpoint) Cluster {
 
 func (c *Cluster) AddEndpoint(endpoint ProbeableEndpoint) {
 	c.NodeEndpoints[endpoint.GetHash()] = endpoint
-}
-
-func (c *Cluster) GetAllEndpoints() (endpoints []ProbeableEndpoint) {
-	for _, endpoint := range c.NodeEndpoints {
-		endpoints = append(endpoints, endpoint)
-	}
-	return endpoints
 }

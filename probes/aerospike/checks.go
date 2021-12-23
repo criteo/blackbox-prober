@@ -94,7 +94,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		opGet := func() error {
 			recVal, err := e.Client.Get(&policy.BasePolicy, key)
 			if recVal.Bins["val"] != val["val"] {
-				err = errors.Errorf("Get succeeded but there is a missmatch between server value {%s} and pushed value")
+				err = errors.Errorf("Get succeeded but there is a missmatch between server value {%s} and pushed value", recVal.Bins["val"])
 			}
 			return err
 		}

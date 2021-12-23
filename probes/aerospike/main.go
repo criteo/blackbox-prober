@@ -103,6 +103,9 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Metrics/pprof server
+	cfg.StartHttpServer()
+
 	// DISCO stuff
 	topo := make(chan topology.ClusterMap, 1)
 	discoverer, err := discovery.NewConsulDiscoverer(log.With(logger), config.DiscoveryConfig.ConsulConfig, topo, config.generateTopologyBuilder())

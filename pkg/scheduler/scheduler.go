@@ -248,7 +248,6 @@ func (pw *ProberWorker) StartProbing() {
 				EndpointSuccessTotal.WithLabelValues("refresh", pw.endpoint.GetName())
 			}
 		case <-checkTicker.C:
-			fmt.Println("Called")
 			level.Debug(pw.logger).Log("msg", "Checking for work")
 			pw.findWork(lastChecks)
 		}

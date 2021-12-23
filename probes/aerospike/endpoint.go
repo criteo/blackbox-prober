@@ -65,6 +65,7 @@ func (e *AerospikeEndpoint) Connect() error {
 	}
 	e.Client = client
 	e.Refresh()
+	e.Client.WarmUp(2)
 	return nil
 }
 

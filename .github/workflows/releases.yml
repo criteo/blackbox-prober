@@ -26,7 +26,7 @@ jobs:
             dep ensure
         fi
     - name: Build
-      run: make build
+      run: make build_linux
 
     - name: Upload
       uses: fnkr/github-action-ghr@v1

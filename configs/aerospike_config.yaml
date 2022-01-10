@@ -32,8 +32,8 @@ client_config:
   durability_key_total: 100 # Number of keys to generate for the durability check
 checks_configs:
   latency_check:
-    enable: false
+    enable: true
     interval: 100ms
   durability_check:
     enable: true
-    interval: 1s
+    interval: 600s

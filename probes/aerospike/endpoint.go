@@ -42,14 +42,14 @@ func (e *AerospikeEndpoint) Connect() error {
 	if e.Config.tlsEnabled {
 		// Setup TLS Config
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify:       e.Config.tlsSkipVerify,
+			InsecureSkipVerify:       e.Config.genericConfig.TLSSkipVerify,
 			PreferServerCipherSuites: true,
 		}
 		clientPolicy.TlsConfig = tlsConfig
 	}
 
 	if e.Config.authEnabled {
-		if e.Config.authExternal {
+		if e.Config.genericConfig.AuthExternal {
 			clientPolicy.AuthMode = as.AuthModeExternal
 		} else {
 			clientPolicy.AuthMode = as.AuthModeInternal

@@ -213,7 +213,10 @@ func (pw *ProberWorker) StartProbing() {
 
 	for i, check := range pw.checks {
 		lastChecks[i] = time.Now()
-		check.PrepareFn(pw.endpoint)
+		err := check.PrepareFn(pw.endpoint)
+		if err != nil {
+			level.Error(pw.logger).Log("msg", fmt.Sprintf("Error while preparing %s", check.Name), "err", err)
+		}
 		if shortestInterval > check.Interval {
 			shortestInterval = check.Interval
 		}

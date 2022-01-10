@@ -12,7 +12,7 @@ import (
 	"github.com/go-kit/log"
 )
 
-func (conf AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.Logger, entry discovery.ServiceEntry) (*AerospikeEndpoint, error) {
+func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.Logger, entry discovery.ServiceEntry) (*AerospikeEndpoint, error) {
 	authEnabled := conf.AerospikeEndpointConfig.AuthEnabled
 	var (
 		username    string
@@ -41,14 +41,14 @@ func (conf AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.L
 
 	return &AerospikeEndpoint{Name: entry.Address, Config: AerospikeClientConfig{
 		// auth
-		authEnabled:  authEnabled,
-		authExternal: conf.AerospikeEndpointConfig.AuthExternal,
-		username:     username,
-		password:     password,
+		authEnabled: authEnabled,
+		username:    username,
+		password:    password,
 		// tls
-		tlsEnabled:    tlsEnabled,
-		tlsHostname:   tlsHostname,
-		tlsSkipVerify: conf.AerospikeEndpointConfig.TLSSkipVerify,
+		tlsEnabled:  tlsEnabled,
+		tlsHostname: tlsHostname,
+		// conf
+		genericConfig: &conf.AerospikeEndpointConfig,
 		// Contact point
 		host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port}},
 		Logger: log.With(logger, "endpoint_name", entry.Address),

@@ -66,12 +66,21 @@ func main() {
 	p := scheduler.NewProbingScheduler(log.With(logger), topo)
 
 	if config.AerospikeChecksConfigs.LatencyCheckConfig.Enable {
-		p.RegisterNewClusterCheck(scheduler.Check{
+		p.RegisterNewNodeCheck(scheduler.Check{
 			Name:       "latency_check",
 			PrepareFn:  scheduler.Noop,
 			CheckFn:    LatencyCheck,
 			TeardownFn: scheduler.Noop,
 			Interval:   config.AerospikeChecksConfigs.LatencyCheckConfig.Interval,
+		})
+	}
+	if config.AerospikeChecksConfigs.DurabilityCheckConfig.Enable {
+		p.RegisterNewClusterCheck(scheduler.Check{
+			Name:       "durability_check",
+			PrepareFn:  DurabilityPrepare,
+			CheckFn:    DurabilityCheck,
+			TeardownFn: scheduler.Noop,
+			Interval:   config.AerospikeChecksConfigs.DurabilityCheckConfig.Interval,
 		})
 	}
 

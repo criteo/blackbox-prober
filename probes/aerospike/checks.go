@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -23,6 +25,21 @@ var opFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: ASSuffix + "_op_latency_failures",
 	Help: "Total number of operations that resulted in failure",
 }, []string{"operation", "endpoint", "namespace", "cluster", "id"})
+
+var durabilityExpectedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: ASSuffix + "_durability_expected_items",
+	Help: "Total number of items expected for durability",
+}, []string{"namespace", "cluster"})
+
+var durabilityFoundItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: ASSuffix + "_durability_found_items",
+	Help: "Total number of items found with correct value for durability",
+}, []string{"namespace", "cluster"})
+
+var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: ASSuffix + "_durability_corrupted_items",
+	Help: "Total number of items found to be corrupted for durability",
+}, []string{"namespace", "cluster"})
 
 // getWriteNode find the node against which the write will be made
 func getWriteNode(c *as.Client, policy *as.WritePolicy, key *as.Key) (*as.Node, error) {
@@ -51,19 +68,29 @@ func keyAsStr(key *as.Key) string {
 	return fmt.Sprintf("[namespace=%s set=%s key=%s]", key.Namespace(), key.SetName(), key.Value())
 }
 
+// Hash a string and return the resulting hex value
+func hash(str string) string {
+	hasher := sha1.New()
+	hasher.Write([]byte(str))
+
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
 func LatencyCheck(p topology.ProbeableEndpoint) error {
 	e, ok := p.(*AerospikeEndpoint)
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
 
-	policy := as.NewWritePolicy(0, 0)
-	policy.MaxRetries = 0            // Ensure we never retry
-	policy.ReplicaPolicy = as.MASTER // Read are always done on master
+	keyPrefix := e.Config.genericConfig.LatencyKeyPrefix
+
+	policy := as.NewWritePolicy(0, 3600) // Expire after one hour if the delete didn't work
+	policy.MaxRetries = 0                // Ensure we never retry
+	policy.ReplicaPolicy = as.MASTER     // Read are always done on master
 
 	for namespace := range e.namespaces {
 		// TODO configurable set
-		key, err := as.NewKey(namespace, "monitoring", utils.RandomHex(20))
+		key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 		if err != nil {
 			return err
 		}
@@ -93,8 +120,14 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		labels[0] = "get"
 		opGet := func() error {
 			recVal, err := e.Client.Get(&policy.BasePolicy, key)
+			if err != nil {
+				return err
+			}
+			if recVal == nil {
+				return errors.Errorf("Record not found after being put")
+			}
 			if recVal.Bins["val"] != val["val"] {
-				err = errors.Errorf("Get succeeded but there is a missmatch between server value {%s} and pushed value")
+				return errors.Errorf("Get succeeded but there is a missmatch between server value {%s} and pushed value", recVal.Bins["val"])
 			}
 			return err
 		}
@@ -120,6 +153,111 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			return errors.Wrapf(err, "record delete failed for: %s", keyAsStr(key))
 		}
 		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record delete: %s", keyAsStr(key)))
+	}
+	return nil
+}
+
+func DurabilityPrepare(p topology.ProbeableEndpoint) error {
+	e, ok := p.(*AerospikeEndpoint)
+	if !ok {
+		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
+	}
+
+	policy := as.NewWritePolicy(0, 0) // No expiration
+	keyRange := e.Config.genericConfig.DurabilityKeyTotal
+	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
+	// allPushedFlag indicate if a probe have pushed all data once
+	// The value contains information about the data pushed (scheme:key_range)
+	// scheme: the format of the data (v1=shasum of the key)
+	// key_range: the number of keys
+	// If the probe find a missmatch it will repush the keys
+	expectedAllPushedFlagVal := fmt.Sprintf("%s:%d", "v1", keyRange) // v1 represents the format of the data stored.
+
+	for namespace := range e.namespaces {
+		// allPushedFlag indicate if a probe have pushed all data once
+		allPushedFlag, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, "all_pushed_flag"))
+		if err != nil {
+			return err
+		}
+
+		recVal, err := e.Client.Get(&policy.BasePolicy, allPushedFlag)
+		if err != nil && err.Error() != "Key not found" {
+			level.Debug(e.Logger).Log("msg", "called")
+			return err
+		}
+		// If the flag was found we skip the init as it has already been done
+		if recVal != nil && recVal.Bins["val"] == expectedAllPushedFlagVal {
+			continue
+		}
+
+		for i := 0; i < keyRange; i++ {
+			keyName := fmt.Sprintf("%s%d", keyPrefix, i)
+			key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, keyName)
+			if err != nil {
+				return err
+			}
+
+			val := as.BinMap{
+				"val": hash(keyName),
+			}
+
+			err = e.Client.Put(policy, key, val)
+			if err != nil {
+				return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
+			}
+			level.Debug(e.Logger).Log("msg", fmt.Sprintf("record durability put: %s (%s)", keyAsStr(key), val["val"]))
+		}
+
+		allPushedFlagVal := as.BinMap{
+			"val": expectedAllPushedFlagVal,
+		}
+		err = e.Client.Put(policy, allPushedFlag, allPushedFlagVal)
+		if err != nil {
+			return errors.Wrapf(err, "Push flag put failed for: %s", keyAsStr(allPushedFlag))
+		}
+
+	}
+	return nil
+}
+
+func DurabilityCheck(p topology.ProbeableEndpoint) error {
+	e, ok := p.(*AerospikeEndpoint)
+	if !ok {
+		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
+	}
+
+	policy := as.NewPolicy()
+	keyRange := e.Config.genericConfig.DurabilityKeyTotal
+	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
+	total_found_items := 0.0
+	total_corrupted_items := 0.0
+
+	for namespace := range e.namespaces {
+		for i := 0; i < keyRange; i++ {
+			keyName := fmt.Sprintf("%s%d", keyPrefix, i)
+			key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, keyName)
+			if err != nil {
+				return err
+			}
+
+			recVal, err := e.Client.Get(policy, key)
+			if err != nil {
+				level.Error(e.Logger).Log("msg", fmt.Sprintf("Error while fetching record: %s", keyAsStr(key)), "err", err)
+				continue
+			}
+			if recVal.Bins["val"] != hash(keyName) {
+				level.Warn(e.Logger).Log("msg",
+					fmt.Sprintf("Get successful but the data didn't match what was expected got: '%s', expected: '%s' (for %s)",
+						recVal.Bins["val"], hash(keyName), keyAsStr(key)))
+				total_corrupted_items += 1
+			} else {
+				total_found_items += 1
+			}
+			level.Debug(e.Logger).Log("msg", fmt.Sprintf("durability record validated: %s (%s)", keyAsStr(key), recVal.Bins["val"]))
+		}
+		durabilityExpectedItems.WithLabelValues(namespace, e.GetName()).Set(float64(keyRange))
+		durabilityFoundItems.WithLabelValues(namespace, e.GetName()).Set(total_found_items)
+		durabilityCorruptedItems.WithLabelValues(namespace, e.GetName()).Set(total_corrupted_items)
 	}
 	return nil
 }

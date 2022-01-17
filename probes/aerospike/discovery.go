@@ -10,6 +10,7 @@ import (
 	"github.com/criteo/blackbox-prober/pkg/utils"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.Logger, entry discovery.ServiceEntry) (*AerospikeEndpoint, error) {
@@ -39,18 +40,26 @@ func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.
 		}
 	}
 
-	return &AerospikeEndpoint{Name: entry.Address, Config: AerospikeClientConfig{
-		// auth
-		authEnabled: authEnabled,
-		username:    username,
-		password:    password,
-		// tls
-		tlsEnabled:  tlsEnabled,
-		tlsHostname: tlsHostname,
-		// conf
-		genericConfig: &conf.AerospikeEndpointConfig,
-		// Contact point
-		host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port}},
+	clusterName, ok := entry.Meta[conf.DiscoveryConfig.MetaClusterKey]
+	if !ok {
+		level.Warn(logger).Log("msg", "Cluster name not found, replacing it with hostname")
+		clusterName = entry.Address
+	}
+
+	return &AerospikeEndpoint{Name: entry.Address,
+		ClusterName: clusterName,
+		Config: AerospikeClientConfig{
+			// auth
+			authEnabled: authEnabled,
+			username:    username,
+			password:    password,
+			// tls
+			tlsEnabled:  tlsEnabled,
+			tlsHostname: tlsHostname,
+			// conf
+			genericConfig: &conf.AerospikeEndpointConfig,
+			// Contact point
+			host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port}},
 		Logger: log.With(logger, "endpoint_name", entry.Address),
 	}, nil
 }
@@ -65,6 +74,7 @@ func (conf AerospikeProbeConfig) generateClusterFromEntries(logger log.Logger, e
 		return endpoint, err
 	}
 	endpoint.Name = entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
+	endpoint.ClusterName = entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
 	endpoint.Logger = log.With(logger, "endpoint_name", endpoint.Name)
 	endpoint.clusterLevel = true
 	return endpoint, nil

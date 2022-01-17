@@ -18,6 +18,7 @@ var (
 type AerospikeEndpoint struct {
 	Name         string
 	clusterLevel bool
+	ClusterName  string
 	Client       *as.Client
 	Config       AerospikeClientConfig
 	Logger       log.Logger

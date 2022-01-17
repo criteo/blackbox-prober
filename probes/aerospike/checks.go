@@ -29,17 +29,17 @@ var opFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 var durabilityExpectedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_durability_expected_items",
 	Help: "Total number of items expected for durability",
-}, []string{"namespace", "cluster"})
+}, []string{"namespace", "cluster", "probe_endpoint"})
 
 var durabilityFoundItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_durability_found_items",
 	Help: "Total number of items found with correct value for durability",
-}, []string{"namespace", "cluster"})
+}, []string{"namespace", "cluster", "probe_endpoint"})
 
 var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_durability_corrupted_items",
 	Help: "Total number of items found to be corrupted for durability",
-}, []string{"namespace", "cluster"})
+}, []string{"namespace", "cluster", "probe_endpoint"})
 
 // getWriteNode find the node against which the write will be made
 func getWriteNode(c *as.Client, policy *as.WritePolicy, key *as.Key) (*as.Node, error) {
@@ -104,7 +104,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		}
 
 		// PUT OPERATION
-		labels := []string{"put", node.GetHost().Name, namespace, e.GetName(), node.GetName()}
+		labels := []string{"put", node.GetHost().Name, namespace, e.ClusterName, node.GetName()}
 
 		opPut := func() error {
 			return e.Client.Put(policy, key, val)
@@ -255,9 +255,9 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 			}
 			level.Debug(e.Logger).Log("msg", fmt.Sprintf("durability record validated: %s (%s)", keyAsStr(key), recVal.Bins["val"]))
 		}
-		durabilityExpectedItems.WithLabelValues(namespace, e.GetName()).Set(float64(keyRange))
-		durabilityFoundItems.WithLabelValues(namespace, e.GetName()).Set(total_found_items)
-		durabilityCorruptedItems.WithLabelValues(namespace, e.GetName()).Set(total_corrupted_items)
+		durabilityExpectedItems.WithLabelValues(namespace, e.ClusterName, e.GetName()).Set(float64(keyRange))
+		durabilityFoundItems.WithLabelValues(namespace, e.ClusterName, e.GetName()).Set(total_found_items)
+		durabilityCorruptedItems.WithLabelValues(namespace, e.ClusterName, e.GetName()).Set(total_corrupted_items)
 	}
 	return nil
 }

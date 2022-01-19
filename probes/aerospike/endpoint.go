@@ -82,9 +82,11 @@ func (e *AerospikeEndpoint) Refresh() error {
 			return err
 		}
 		for _, val := range data {
-			matches := setExtractionRegex.FindStringSubmatch(val)
-			if len(matches) > 1 {
-				e.namespaces[matches[1]] = struct{}{}
+			matches := setExtractionRegex.FindAllStringSubmatch(val, -1)
+			for _, match := range matches {
+				if len(match) > 1 {
+					e.namespaces[match[1]] = struct{}{}
+				}
 			}
 		}
 	}

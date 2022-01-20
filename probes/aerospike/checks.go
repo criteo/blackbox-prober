@@ -60,6 +60,8 @@ func ObserveOpLatency(op func() error, labels []string) error {
 	opLatency.WithLabelValues(labels...).Observe(time.Since(start).Seconds())
 	if err != nil {
 		opFailuresTotal.WithLabelValues(labels...).Inc()
+	} else {
+		opFailuresTotal.WithLabelValues(labels...).Add(0) // Force creation of metric
 	}
 	return err
 }

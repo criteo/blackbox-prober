@@ -112,7 +112,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			return e.Client.Put(policy, key, val)
 		}
 
-		ObserveOpLatency(opPut, labels)
+		err = ObserveOpLatency(opPut, labels)
 		if err != nil {
 			return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
 		}
@@ -134,7 +134,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			return err
 		}
 
-		ObserveOpLatency(opGet, labels)
+		err = ObserveOpLatency(opGet, labels)
 		if err != nil {
 			return errors.Wrapf(err, "record get failed for: %s", keyAsStr(key))
 		}
@@ -150,7 +150,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			return err
 		}
 
-		ObserveOpLatency(opDelete, labels)
+		err = ObserveOpLatency(opDelete, labels)
 		if err != nil {
 			return errors.Wrapf(err, "record delete failed for: %s", keyAsStr(key))
 		}

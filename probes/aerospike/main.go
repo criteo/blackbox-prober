@@ -9,19 +9,15 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
+	"github.com/criteo/blackbox-prober/pkg/aerospike"
 	"github.com/criteo/blackbox-prober/pkg/common"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
 
 	"github.com/criteo/blackbox-prober/pkg/topology"
-	"github.com/criteo/blackbox-prober/pkg/utils"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/promlog"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
-)
-
-var (
-	ASSuffix = utils.MetricSuffix + "_aerospike"
 )
 
 // TODO: add timeouts
@@ -43,7 +39,7 @@ func main() {
 	logger := cfg.GetLogger()
 
 	// Parse config file
-	config := AerospikeProbeConfig{}
+	config := aerospike.AerospikeProbeConfig{}
 	err = cfg.ParseConfigFile(&config)
 	if err != nil {
 		level.Error(logger).Log("msg", "Fatal: error during parsing of config file", "err", err)
@@ -55,7 +51,7 @@ func main() {
 
 	// DISCO stuff
 	topo := make(chan topology.ClusterMap, 1)
-	discoverer, err := discovery.NewConsulDiscoverer(log.With(logger), config.DiscoveryConfig.ConsulConfig, topo, config.generateTopologyBuilder())
+	discoverer, err := discovery.NewConsulDiscoverer(log.With(logger), config.DiscoveryConfig.ConsulConfig, topo, config.GenerateTopologyBuilder())
 	if err != nil {
 		level.Error(logger).Log("msg", "Fatal: error during init of service discovery", "err", err)
 		os.Exit(2)
@@ -69,7 +65,7 @@ func main() {
 		p.RegisterNewNodeCheck(scheduler.Check{
 			Name:       "latency_check",
 			PrepareFn:  scheduler.Noop,
-			CheckFn:    LatencyCheck,
+			CheckFn:    aerospike.LatencyCheck,
 			TeardownFn: scheduler.Noop,
 			Interval:   config.AerospikeChecksConfigs.LatencyCheckConfig.Interval,
 		})
@@ -77,8 +73,8 @@ func main() {
 	if config.AerospikeChecksConfigs.DurabilityCheckConfig.Enable {
 		p.RegisterNewClusterCheck(scheduler.Check{
 			Name:       "durability_check",
-			PrepareFn:  DurabilityPrepare,
-			CheckFn:    DurabilityCheck,
+			PrepareFn:  aerospike.DurabilityPrepare,
+			CheckFn:    aerospike.DurabilityCheck,
 			TeardownFn: scheduler.Noop,
 			Interval:   config.AerospikeChecksConfigs.DurabilityCheckConfig.Interval,
 		})

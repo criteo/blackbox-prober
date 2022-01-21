@@ -1,4 +1,4 @@
-package main
+package aerospike
 
 import (
 	as "github.com/aerospike/aerospike-client-go"

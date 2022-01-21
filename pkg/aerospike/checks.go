@@ -1,4 +1,4 @@
-package main
+package aerospike
 
 import (
 	"crypto/sha1"
@@ -13,6 +13,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	ASSuffix = utils.MetricSuffix + "_aerospike"
 )
 
 var opLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{

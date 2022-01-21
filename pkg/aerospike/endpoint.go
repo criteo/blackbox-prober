@@ -1,4 +1,4 @@
-package main
+package aerospike
 
 import (
 	"crypto/tls"

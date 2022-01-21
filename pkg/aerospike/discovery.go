@@ -1,4 +1,4 @@
-package main
+package aerospike
 
 import (
 	"fmt"
@@ -97,6 +97,6 @@ func (conf AerospikeProbeConfig) generateClusterFromEntries(logger log.Logger, e
 	return endpoint, nil
 }
 
-func (conf AerospikeProbeConfig) generateTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
+func (conf AerospikeProbeConfig) GenerateTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
 	return conf.DiscoveryConfig.GetGenericTopologyBuilder(conf.generateClusterFromEntries, conf.generateNodeFromEntry)
 }

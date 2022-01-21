@@ -22,7 +22,7 @@ client_config:
   # Tag to use in the discovery to determine wether or not the probe should connect to cluster in SSL
   tls_tag: "tls"
   # Meta key to find the tls-hostname to use for SSL cert validation
-  TLSHostnameMetaKey: "tls-hostname"
+  tls_hostname_meta_key: "tls-hostname"
   # Skip ssl verification
   tls_skip_verify: false 
   ### Probe configuration ###

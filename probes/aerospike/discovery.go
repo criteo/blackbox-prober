@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	as "github.com/aerospike/aerospike-client-go"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
@@ -46,8 +47,24 @@ func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.
 		clusterName = entry.Address
 	}
 
+	namespaces := make(map[string]struct{})
+	autoDiscoverNamespaces := true
+
+	if conf.AerospikeEndpointConfig.NamespaceMetaKey != "" {
+		nsString, ok := entry.Meta[conf.AerospikeEndpointConfig.NamespaceMetaKey]
+		if ok {
+			nsFromDiscovery := strings.Split(nsString, ";")
+			for _, ns := range nsFromDiscovery {
+				namespaces[ns] = struct{}{}
+			}
+			autoDiscoverNamespaces = false
+		}
+	}
+
 	return &AerospikeEndpoint{Name: entry.Address,
-		ClusterName: clusterName,
+		ClusterName:            clusterName,
+		namespaces:             namespaces,
+		AutoDiscoverNamespaces: autoDiscoverNamespaces,
 		Config: AerospikeClientConfig{
 			// auth
 			authEnabled: authEnabled,

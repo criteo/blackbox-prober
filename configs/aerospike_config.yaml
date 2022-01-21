@@ -25,6 +25,10 @@ client_config:
   tls_hostname_meta_key: "tls-hostname"
   # Skip ssl verification
   tls_skip_verify: false 
+  ### Probe discovery configuration ###
+  # The key to discover Aerospike's namespaces through service discovery
+  # Set it to "" to instead discover namespaces automatically via the info command
+  namespace_meta_key: "aerospike-namespaces"
   ### Probe configuration ###
   monitoring_set: monitoring
   latency_key_prefix: monitoring_latency_

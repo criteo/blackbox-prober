@@ -235,10 +235,10 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	policy := as.NewPolicy()
 	keyRange := e.Config.genericConfig.DurabilityKeyTotal
 	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
-	total_found_items := 0.0
-	total_corrupted_items := 0.0
 
 	for namespace := range e.namespaces {
+		total_found_items := 0.0
+		total_corrupted_items := 0.0
 		for i := 0; i < keyRange; i++ {
 			keyName := fmt.Sprintf("%s%d", keyPrefix, i)
 			key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, keyName)

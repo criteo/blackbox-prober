@@ -2,8 +2,11 @@ package aerospike
 
 import (
 	as "github.com/aerospike/aerospike-client-go"
+	asl "github.com/aerospike/aerospike-client-go/logger"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
+	"github.com/pkg/errors"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // Config used to configure the client of Aerospike
@@ -69,6 +72,33 @@ func (c *AerospikeEndpointConfig) UnmarshalYAML(unmarshal func(interface{}) erro
 		return err
 	}
 	return nil
+}
+
+func AddFlags(a *kingpin.Application, cfg *AerospikeProbeCommandLine) {
+	a.HelpFlag.Short('h')
+	a.Flag("aeropsike.log.level", "Only log messages with the given severity or above. One of: [debug, info, warn, error, off]").
+		Default("off").StringVar(&cfg.AerospikeLogLevel)
+}
+
+func GetLevel(s string) (asl.LogPriority, error) {
+	switch s {
+	case "off":
+		return asl.OFF, nil
+	case "debug":
+		return asl.DEBUG, nil
+	case "info":
+		return asl.INFO, nil
+	case "warn":
+		return asl.WARNING, nil
+	case "error":
+		return asl.ERR, nil
+	default:
+		return asl.OFF, errors.Errorf("unrecognized log level %q", s)
+	}
+}
+
+type AerospikeProbeCommandLine struct {
+	AerospikeLogLevel string `yaml:"aeropsike_log_level,omitempty"`
 }
 
 type AerospikeProbeConfig struct {

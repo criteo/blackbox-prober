@@ -14,20 +14,25 @@ import (
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
 
+	asl "github.com/aerospike/aerospike-client-go/logger"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/promlog"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // TODO: add timeouts
 func main() {
 	// CLI Flags
-	cfg := common.ProbeConfig{
+	commonCfg := common.ProbeConfig{
 		LogConfig: promlog.Config{},
 	}
+
+	aerospikeCfg := aerospike.AerospikeProbeCommandLine{}
+
 	a := kingpin.New(filepath.Base(os.Args[0]), "Aerospike blackbox probe").UsageWriter(os.Stdout)
-	common.AddFlags(a, &cfg)
+	common.AddFlags(a, &commonCfg)
+	aerospike.AddFlags(a, &aerospikeCfg)
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing commandline arguments"))
@@ -36,18 +41,25 @@ func main() {
 	}
 
 	// Init loggger
-	logger := cfg.GetLogger()
+	logger := commonCfg.GetLogger()
+	aslLevel, err := aerospike.GetLevel(aerospikeCfg.AerospikeLogLevel)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		a.Usage(os.Args[1:])
+		os.Exit(2)
+	}
+	asl.Logger.SetLevel(aslLevel)
 
 	// Parse config file
 	config := aerospike.AerospikeProbeConfig{}
-	err = cfg.ParseConfigFile(&config)
+	err = commonCfg.ParseConfigFile(&config)
 	if err != nil {
 		level.Error(logger).Log("msg", "Fatal: error during parsing of config file", "err", err)
 		os.Exit(2)
 	}
 
 	// Metrics/pprof server
-	cfg.StartHttpServer()
+	commonCfg.StartHttpServer()
 
 	// DISCO stuff
 	topo := make(chan topology.ClusterMap, 1)

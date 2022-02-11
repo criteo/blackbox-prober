@@ -170,29 +170,29 @@ type ProberWorker struct {
 	controlChan     chan bool
 }
 
-func (pw *ProberWorker) findWork(lastChecks []time.Time) {
-	for {
-		check_performed := false
-		for i, check := range pw.checks {
-			if lastChecks[i].Add(check.Interval).Before(time.Now()) {
-				level.Debug(pw.logger).Log("msg", fmt.Sprintf("Performing check %s", check.Name))
-				err := check.CheckFn(pw.endpoint)
-				if err != nil {
-					CheckFailureTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
-					level.Error(pw.logger).Log("msg", "Error while probing", "err", err)
-				} else {
-					CheckSuccessTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
-				}
-				lastChecks[i] = time.Now()
-				check_performed = true
+// runAllPendingChecks run all the checks that should be run according to the last time they were run
+// It returns the duration to wait for the soonest next check
+func (pw *ProberWorker) runAllPendingChecks(lastChecks []time.Time) time.Duration {
+	soonestCheck := lastChecks[0].Add(pw.checks[0].Interval)
+	for i, check := range pw.checks {
+		nextCheckTime := lastChecks[i].Add(check.Interval)
+		if nextCheckTime.Before(time.Now()) {
+			level.Debug(pw.logger).Log("msg", fmt.Sprintf("Performing check %s", check.Name))
+			err := check.CheckFn(pw.endpoint)
+			if err != nil {
+				CheckFailureTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
+				level.Error(pw.logger).Log("msg", "Error while probing", "err", err)
+			} else {
+				CheckSuccessTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
 			}
+			lastChecks[i] = time.Now()
 		}
-		// If we have performed a check it means we lost some time
-		// We should check for available work before going to sleep again
-		if !check_performed {
-			break
+		if soonestCheck.After(nextCheckTime) {
+			soonestCheck = nextCheckTime
 		}
 	}
+
+	return time.Until(soonestCheck)
 }
 
 func (pw *ProberWorker) StartProbing() {
@@ -204,25 +204,20 @@ func (pw *ProberWorker) StartProbing() {
 	}
 
 	lastChecks := make([]time.Time, len(pw.checks))
-	// shortestInterval will be used as ticker for all checks.
-	// findWork will then check if we have a check that is ready to be processed.
-	// (that we waited enough time since last check run)
-	// It means that the interval between each check might not be exact.
-	// This is done because in Go we cannot wait against an arbitrary number of ticker
-	shortestInterval := pw.checks[0].Interval
 
+	nextCheckWaitTime := pw.checks[0].Interval
 	for i, check := range pw.checks {
 		lastChecks[i] = time.Now()
 		err := check.PrepareFn(pw.endpoint)
 		if err != nil {
 			level.Error(pw.logger).Log("msg", fmt.Sprintf("Error while preparing %s", check.Name), "err", err)
 		}
-		if shortestInterval > check.Interval {
-			shortestInterval = check.Interval
+		if nextCheckWaitTime > check.Interval {
+			nextCheckWaitTime = check.Interval
 		}
 	}
 
-	checkTicker := time.NewTicker(shortestInterval)
+	checkTicker := time.After(nextCheckWaitTime)
 	refreshTicker := time.NewTicker(pw.refreshInterval)
 
 	for {
@@ -250,9 +245,10 @@ func (pw *ProberWorker) StartProbing() {
 			} else {
 				EndpointSuccessTotal.WithLabelValues("refresh", pw.endpoint.GetName())
 			}
-		case <-checkTicker.C:
+		case <-checkTicker:
 			level.Debug(pw.logger).Log("msg", "Checking for work")
-			pw.findWork(lastChecks)
+			nextCheckWaitTime := pw.runAllPendingChecks(lastChecks)
+			checkTicker = time.After(nextCheckWaitTime)
 		}
 	}
 }

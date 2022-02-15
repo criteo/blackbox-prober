@@ -40,26 +40,30 @@ type AerospikeEndpointConfig struct {
 	// Metadata key to get the Hostname to use for TLS auth (only used if tlsTag is set)
 	TLSHostnameMetaKey string `yaml:"tls_hostname_meta_key,omitempty"`
 	// Probe configuration
-	NamespaceMetaKey    string `yaml:"namespace_meta_key,omitempty"`
-	MonitoringSet       string `yaml:"monitoring_set,omitempty"`
-	LatencyKeyPrefix    string `yaml:"latency_key_prefix,omitempty"`
-	DurabilityKeyPrefix string `yaml:"durability_key_prefix,omitempty"`
-	DurabilityKeyTotal  int    `yaml:"durability_key_total,omitempty"`
+	NamespaceMetaKey           string `yaml:"namespace_meta_key,omitempty"`
+	MonitoringSet              string `yaml:"monitoring_set,omitempty"`
+	LatencyKeyPrefix           string `yaml:"latency_key_prefix,omitempty"`
+	DurabilityKeyPrefix        string `yaml:"durability_key_prefix,omitempty"`
+	DurabilityKeyTotal         int    `yaml:"durability_key_total,omitempty"`
+	ConnectionQueueSize        int    `yaml:"connection_queue_size,omitempty"`
+	OpeningConnectionThreshold int    `yaml:"opening_connection_threshold,omitempty"`
 }
 
 var (
 	defaultAerospikeClient = AerospikeEndpointConfig{
-		AuthEnabled:         true,
-		AuthExternal:        true,
-		UsernameEnv:         "AEROSPIKE_USERNAME",
-		PasswordEnv:         "AEROSPIKE_PASSWORD",
-		TLSTag:              "tls",
-		TLSHostnameMetaKey:  "tls-hostname",
-		NamespaceMetaKey:    "",
-		MonitoringSet:       "monitoring",
-		LatencyKeyPrefix:    "monitoring_latency_",
-		DurabilityKeyPrefix: "monitoring_durability_",
-		DurabilityKeyTotal:  10000,
+		AuthEnabled:                true,
+		AuthExternal:               true,
+		UsernameEnv:                "AEROSPIKE_USERNAME",
+		PasswordEnv:                "AEROSPIKE_PASSWORD",
+		TLSTag:                     "tls",
+		TLSHostnameMetaKey:         "tls-hostname",
+		NamespaceMetaKey:           "",
+		MonitoringSet:              "monitoring",
+		LatencyKeyPrefix:           "monitoring_latency_",
+		DurabilityKeyPrefix:        "monitoring_durability_",
+		DurabilityKeyTotal:         10000,
+		ConnectionQueueSize:        256,
+		OpeningConnectionThreshold: 0,
 	}
 )
 

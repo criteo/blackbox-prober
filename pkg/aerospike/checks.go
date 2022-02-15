@@ -94,7 +94,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	policy.MaxRetries = 0                // Ensure we never retry
 	policy.ReplicaPolicy = as.MASTER     // Read are always done on master
 
-	for namespace := range e.namespaces {
+	for namespace := range e.Namespaces {
 		// TODO configurable set
 		key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 		if err != nil {
@@ -179,7 +179,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	// If the probe find a missmatch it will repush the keys
 	expectedAllPushedFlagVal := fmt.Sprintf("%s:%d", "v1", keyRange) // v1 represents the format of the data stored.
 
-	for namespace := range e.namespaces {
+	for namespace := range e.Namespaces {
 		// allPushedFlag indicate if a probe have pushed all data once
 		allPushedFlag, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, "all_pushed_flag"))
 		if err != nil {
@@ -236,7 +236,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	keyRange := e.Config.genericConfig.DurabilityKeyTotal
 	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
 
-	for namespace := range e.namespaces {
+	for namespace := range e.Namespaces {
 		total_found_items := 0.0
 		total_corrupted_items := 0.0
 		for i := 0; i < keyRange; i++ {

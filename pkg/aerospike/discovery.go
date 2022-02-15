@@ -63,7 +63,7 @@ func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.
 
 	return &AerospikeEndpoint{Name: entry.Address,
 		ClusterName:            clusterName,
-		namespaces:             namespaces,
+		Namespaces:             namespaces,
 		AutoDiscoverNamespaces: autoDiscoverNamespaces,
 		Config: AerospikeClientConfig{
 			// auth
@@ -93,7 +93,7 @@ func (conf AerospikeProbeConfig) generateClusterFromEntries(logger log.Logger, e
 	endpoint.Name = entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
 	endpoint.ClusterName = entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
 	endpoint.Logger = log.With(logger, "endpoint_name", endpoint.Name)
-	endpoint.clusterLevel = true
+	endpoint.ClusterLevel = true
 	return endpoint, nil
 }
 

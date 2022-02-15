@@ -18,22 +18,22 @@ var (
 
 type AerospikeEndpoint struct {
 	Name                   string
-	clusterLevel           bool
+	ClusterLevel           bool
 	ClusterName            string
 	Client                 *as.Client
 	Config                 AerospikeClientConfig
 	Logger                 log.Logger
 	AutoDiscoverNamespaces bool
-	namespaces             map[string]struct{}
+	Namespaces             map[string]struct{}
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
-	// If namespaces are pushed through service discovery
-	// the hash should change according to the namespaces
+	// If Namespaces are pushed through service discovery
+	// the hash should change according to the Namespaces
 	if !e.AutoDiscoverNamespaces {
 		// Make sure the list is always in the same order
-		namespaces := make([]string, 0, len(e.namespaces))
-		for str := range e.namespaces {
+		namespaces := make([]string, 0, len(e.Namespaces))
+		for str := range e.Namespaces {
 			namespaces = append(namespaces, str)
 		}
 		sort.Strings(namespaces)
@@ -47,11 +47,13 @@ func (e *AerospikeEndpoint) GetName() string {
 }
 
 func (e *AerospikeEndpoint) IsCluster() bool {
-	return e.clusterLevel
+	return e.ClusterLevel
 }
 
 func (e *AerospikeEndpoint) Connect() error {
 	clientPolicy := as.NewClientPolicy()
+	clientPolicy.ConnectionQueueSize = e.Config.genericConfig.ConnectionQueueSize
+	clientPolicy.OpeningConnectionThreshold = e.Config.genericConfig.OpeningConnectionThreshold
 
 	if e.Config.tlsEnabled {
 		// Setup TLS Config
@@ -91,7 +93,7 @@ func (e *AerospikeEndpoint) Refresh() error {
 
 	infop := as.NewInfoPolicy()
 
-	e.namespaces = make(map[string]struct{})
+	e.Namespaces = make(map[string]struct{})
 	for _, n := range nodes {
 
 		data, err := n.RequestInfo(infop, fmt.Sprintln("sets"))
@@ -102,12 +104,12 @@ func (e *AerospikeEndpoint) Refresh() error {
 			matches := setExtractionRegex.FindAllStringSubmatch(val, -1)
 			for _, match := range matches {
 				if len(match) > 1 {
-					e.namespaces[match[1]] = struct{}{}
+					e.Namespaces[match[1]] = struct{}{}
 				}
 			}
 		}
 	}
-	level.Debug(e.Logger).Log("msg", fmt.Sprintf("Refresh finished: current namespaces: %s", e.namespaces))
+	level.Debug(e.Logger).Log("msg", fmt.Sprintf("Refresh finished: current Namespaces: %s", e.Namespaces))
 	return nil
 }
 

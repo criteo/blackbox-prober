@@ -19,7 +19,7 @@ func TestHashWorks(t *testing.T) {
 	if e.GetHash() != "foobar/ns:[]" {
 		t.Errorf("Hash failed: expected: %s, got: %s", "foobar/ns:[]", e.GetHash())
 	}
-	e = AerospikeEndpoint{Name: name, AutoDiscoverNamespaces: false, namespaces: ns}
+	e = AerospikeEndpoint{Name: name, AutoDiscoverNamespaces: false, Namespaces: ns}
 	if e.GetHash() != "foobar/ns:[00 bar fo ob]" {
 		t.Errorf("Hash failed: expected: %s, got: %s (order is important)", "foobar/ns:[00 bar fo ob]", e.GetHash())
 	}

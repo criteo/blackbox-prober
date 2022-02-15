@@ -52,6 +52,8 @@ func (e *AerospikeEndpoint) IsCluster() bool {
 
 func (e *AerospikeEndpoint) Connect() error {
 	clientPolicy := as.NewClientPolicy()
+	clientPolicy.ConnectionQueueSize = e.Config.genericConfig.ConnectionQueueSize
+	clientPolicy.OpeningConnectionThreshold = e.Config.genericConfig.OpeningConnectionThreshold
 
 	if e.Config.tlsEnabled {
 		// Setup TLS Config

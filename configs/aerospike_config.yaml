@@ -34,6 +34,9 @@ client_config:
   latency_key_prefix: monitoring_latency_
   durability_key_prefix: monitoring_durability_
   durability_key_total: 100 # Number of keys to generate for the durability check
+  ### Client connection configuration ###
+  connection_queue_size: 10
+  opening_connection_threshold: 1
 checks_configs:
   latency_check:
     enable: true

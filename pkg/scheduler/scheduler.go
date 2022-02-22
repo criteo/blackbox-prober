@@ -180,10 +180,10 @@ func (pw *ProberWorker) runAllPendingChecks(lastChecks []time.Time) time.Duratio
 			level.Debug(pw.logger).Log("msg", fmt.Sprintf("Performing check %s", check.Name))
 			err := check.CheckFn(pw.endpoint)
 			if err != nil {
-				CheckFailureTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
+				CheckFailureTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name).Inc()
 				level.Error(pw.logger).Log("msg", "Error while probing", "err", err)
 			} else {
-				CheckSuccessTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name)
+				CheckSuccessTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name).Inc()
 			}
 			lastChecks[i] = time.Now()
 		}
@@ -230,9 +230,9 @@ func (pw *ProberWorker) StartProbing() {
 				err := check.TeardownFn(pw.endpoint)
 				if err != nil {
 					level.Error(pw.logger).Log("msg", "Error while tearingdown", "err", err)
-					CheckFailureTotal.WithLabelValues("teardown", pw.endpoint.GetName(), check.Name)
+					CheckFailureTotal.WithLabelValues("teardown", pw.endpoint.GetName(), check.Name).Inc()
 				} else {
-					CheckSuccessTotal.WithLabelValues("teardown", pw.endpoint.GetName(), check.Name)
+					CheckSuccessTotal.WithLabelValues("teardown", pw.endpoint.GetName(), check.Name).Inc()
 				}
 			}
 			return
@@ -241,9 +241,9 @@ func (pw *ProberWorker) StartProbing() {
 			err := pw.endpoint.Refresh()
 			if err != nil {
 				level.Error(pw.logger).Log("msg", "Error while refreshing", "err", err)
-				EndpointFailureTotal.WithLabelValues("refresh", pw.endpoint.GetName())
+				EndpointFailureTotal.WithLabelValues("refresh", pw.endpoint.GetName()).Inc()
 			} else {
-				EndpointSuccessTotal.WithLabelValues("refresh", pw.endpoint.GetName())
+				EndpointSuccessTotal.WithLabelValues("refresh", pw.endpoint.GetName()).Inc()
 			}
 		case <-checkTicker:
 			level.Debug(pw.logger).Log("msg", "Checking for work")

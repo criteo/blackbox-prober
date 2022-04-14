@@ -28,6 +28,7 @@ type AerospikeEndpoint struct {
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
+	hash := fmt.Sprintf("%s/%s", e.ClusterName, e.Name)
 	// If Namespaces are pushed through service discovery
 	// the hash should change according to the Namespaces
 	if !e.AutoDiscoverNamespaces {
@@ -37,9 +38,9 @@ func (e *AerospikeEndpoint) GetHash() string {
 			namespaces = append(namespaces, str)
 		}
 		sort.Strings(namespaces)
-		return fmt.Sprintf("%s/ns:%s", e.Name, namespaces)
+		return fmt.Sprintf("%s/ns:%s", hash, namespaces)
 	}
-	return e.Name
+	return hash
 }
 
 func (e *AerospikeEndpoint) GetName() string {

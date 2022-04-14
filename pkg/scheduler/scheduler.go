@@ -69,14 +69,14 @@ type ProbingScheduler struct {
 	logger             log.Logger
 	currentTopology    topology.ClusterMap
 	topologyUpdateChan chan topology.ClusterMap
-	workerControlChans map[topology.ProbeableEndpoint]chan bool
+	workerControlChans map[string]chan bool
 	clusterChecks      []Check
 	nodeChecks         []Check
 }
 
 func NewProbingScheduler(logger log.Logger, topologyUpdateChan chan topology.ClusterMap) ProbingScheduler {
 	currentTopology := topology.NewClusterMap()
-	workerControlChans := make(map[topology.ProbeableEndpoint]chan bool)
+	workerControlChans := make(map[string]chan bool)
 	clusterChecks := []Check{}
 	nodeChecks := []Check{}
 	return ProbingScheduler{logger, currentTopology, topologyUpdateChan, workerControlChans, clusterChecks, nodeChecks}
@@ -138,16 +138,19 @@ func (ps *ProbingScheduler) Start() {
 }
 
 func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEndpoint) {
-	workerChan, ok := ps.workerControlChans[endpoint]
-	if ok {
-		level.Info(ps.logger).Log("msg", fmt.Sprintf("Stopping probing on %s", endpoint.GetName()))
-		workerChan <- false // Terminate workers
-		delete(ps.workerControlChans, endpoint)
+	workerChan, ok := ps.workerControlChans[endpoint.GetHash()]
+	if !ok {
+		level.Error(ps.logger).Log("msg", fmt.Sprintf("Couldn't stop probing on %s (%s). The probe is not registered", endpoint.GetName(), endpoint.GetHash()))
+		return
 	}
+
+	level.Info(ps.logger).Log("msg", fmt.Sprintf("Stopping probing on %s", endpoint.GetName()))
+	workerChan <- false // Terminate workers
+	delete(ps.workerControlChans, endpoint.GetHash())
 }
 
 func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) error {
-	wc := make(chan bool)
+	wc := make(chan bool, 1)
 	w := ProberWorker{logger: log.With(ps.logger, "endpoint_name", endpoint.GetName()),
 		endpoint: endpoint, checks: checks,
 		controlChan: wc, refreshInterval: 30 * time.Second}
@@ -157,7 +160,7 @@ func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, 
 		return errors.Wrapf(err, "Init failure during connection to endpoint %s", w.endpoint.GetHash())
 	}
 
-	ps.workerControlChans[endpoint] = wc
+	ps.workerControlChans[endpoint.GetHash()] = wc
 	go w.StartProbing()
 	return nil
 }

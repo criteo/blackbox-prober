@@ -11,16 +11,16 @@ func TestHashWorks(t *testing.T) {
 		"00":  {},
 	}
 
-	e := AerospikeEndpoint{Name: name, AutoDiscoverNamespaces: true}
-	if e.GetHash() != "foobar" {
+	e := AerospikeEndpoint{Name: name, ClusterName: "foo", AutoDiscoverNamespaces: true}
+	if e.GetHash() != "foo/foobar" {
 		t.Errorf("Hash failed: expected: %s, got: %s", name, e.GetHash())
 	}
-	e = AerospikeEndpoint{Name: name, AutoDiscoverNamespaces: false}
-	if e.GetHash() != "foobar/ns:[]" {
+	e = AerospikeEndpoint{Name: name, ClusterName: "foo", AutoDiscoverNamespaces: false}
+	if e.GetHash() != "foo/foobar/ns:[]" {
 		t.Errorf("Hash failed: expected: %s, got: %s", "foobar/ns:[]", e.GetHash())
 	}
-	e = AerospikeEndpoint{Name: name, AutoDiscoverNamespaces: false, Namespaces: ns}
-	if e.GetHash() != "foobar/ns:[00 bar fo ob]" {
+	e = AerospikeEndpoint{Name: name, ClusterName: "foo", AutoDiscoverNamespaces: false, Namespaces: ns}
+	if e.GetHash() != "foo/foobar/ns:[00 bar fo ob]" {
 		t.Errorf("Hash failed: expected: %s, got: %s (order is important)", "foobar/ns:[00 bar fo ob]", e.GetHash())
 	}
 }

@@ -15,6 +15,7 @@ RUN microdnf upgrade -y && \
     microdnf clean all
 
 COPY --from=builder /blackbox-prober/build/aerospike_probe /build/aerospike_probe
+COPY --from=builder /blackbox-prober/build/memcached_probe /build/memcached_probe
 
 EXPOSE 8080
 

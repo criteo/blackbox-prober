@@ -20,8 +20,9 @@ type ProbeableEndpoint interface {
 // DummyEndpoint is a fake ProbeableEndpoint that don't do anything
 // Useful for testing
 type DummyEndpoint struct {
-	Name string
-	Hash string
+	Name    string
+	Hash    string
+	Cluster bool
 }
 
 func (d DummyEndpoint) GetHash() string {
@@ -33,7 +34,7 @@ func (d DummyEndpoint) GetName() string {
 }
 
 func (d DummyEndpoint) IsCluster() bool {
-	return false
+	return d.Cluster
 }
 
 func (d DummyEndpoint) Connect() error {

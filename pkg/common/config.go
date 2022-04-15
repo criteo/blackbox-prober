@@ -27,7 +27,7 @@ func AddFlags(a *kingpin.Application, cfg *ProbeConfig) {
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
 		Default("0.0.0.0:8080").StringVar(&cfg.HttpListenAddr)
 	a.Flag("config.path", "Path to the probe configuration file").
-		Default("configs/aerospike_config.yaml").StringVar(&cfg.ConfigPath)
+		Default("conf.yaml").StringVar(&cfg.ConfigPath)
 	promlogflag.AddFlags(a, &cfg.LogConfig)
 }
 

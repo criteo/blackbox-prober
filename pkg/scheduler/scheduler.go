@@ -151,7 +151,7 @@ func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEnd
 
 func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) error {
 	wc := make(chan bool, 1)
-	w := ProberWorker{logger: log.With(ps.logger, "endpoint_name", endpoint.GetName()),
+	w := ProberWorker{logger: log.With(ps.logger, "endpoint_name", endpoint.GetName(), "endpoint_hash", endpoint.GetHash()),
 		endpoint: endpoint, checks: checks,
 		controlChan: wc, refreshInterval: 30 * time.Second}
 

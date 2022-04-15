@@ -7,6 +7,7 @@ following databases:
 | Database  | Maturity |
 | --------- | -------- |
 | Aerospike | Alpha    |
+| Memcached | Alpha    |
 
 ## Checks
 

@@ -82,7 +82,7 @@ func (e *AerospikeEndpoint) Connect() error {
 	}
 	e.Client = client
 	e.Refresh()
-	e.Client.WarmUp(2)
+	e.Client.WarmUp(e.Config.genericConfig.ConnectionQueueSize)
 	return nil
 }
 

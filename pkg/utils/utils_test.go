@@ -19,7 +19,7 @@ func TestRandomHexWorks(t *testing.T) {
 	re, _ := regexp.Compile("^[a-f0-9]{77}$")
 	hex := utils.RandomHex(77)
 	if !re.MatchString(hex) {
-		t.Errorf("RandomHex doesn't work, generated hex: %s", hex)
+		t.Errorf("RandomHex doesn't work, generated hex: %s (size:%d)", hex, len(hex))
 	}
 
 }

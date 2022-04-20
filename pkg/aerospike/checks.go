@@ -95,6 +95,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	policy.ReplicaPolicy = as.MASTER     // Read are always done on master
 
 	for namespace := range e.Namespaces {
+		e.Client.WarmUp(e.Config.genericConfig.ConnectionQueueSize)
 		// TODO configurable set
 		key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 		if err != nil {

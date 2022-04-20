@@ -35,7 +35,7 @@ client_config:
   durability_key_prefix: monitoring_durability_
   durability_key_total: 100 # Number of keys to generate for the durability check
   ### Client connection configuration ###
-  connection_queue_size: 10
+  connection_queue_size: 2 # Avoid creating too many connections. We don't need many as we duplicate the clients many times
   opening_connection_threshold: 1
 checks_configs:
   latency_check:

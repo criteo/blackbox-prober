@@ -24,7 +24,7 @@ func Contains(s []string, e string) bool {
 }
 
 func RandomHex(n int) string {
-	bytes := make([]byte, n)
+	bytes := make([]byte, n/2+n%2)
 	if _, err := rand.Read(bytes); err != nil {
 		PanicOnError(err)
 	}

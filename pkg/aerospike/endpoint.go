@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	as "github.com/aerospike/aerospike-client-go"
 )
@@ -15,6 +17,11 @@ import (
 var (
 	setExtractionRegex, _ = regexp.Compile("ns=([a-zA-Z0-9]+):")
 )
+
+var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: ASSuffix + "_aerospike_client_cluster_stats",
+	Help: "Cluster aggregated metrics from the go aerospike client",
+}, []string{"cluster", "probe_endpoint", "name"})
 
 type AerospikeEndpoint struct {
 	Name                   string
@@ -49,6 +56,40 @@ func (e *AerospikeEndpoint) GetName() string {
 
 func (e *AerospikeEndpoint) IsCluster() bool {
 	return e.ClusterLevel
+}
+
+func (e *AerospikeEndpoint) setMetricFromASStats(stats map[string]interface{}, key string) {
+	val, ok := stats[key]
+	if !ok {
+		return
+	}
+
+	value, ok := val.(float64)
+	if !ok {
+		return
+	}
+	clusterStats.WithLabelValues(e.ClusterName, e.GetName(), key).Set(value)
+}
+
+func (e *AerospikeEndpoint) refreshMetrics() {
+	stats, err := e.Client.Stats()
+	cluster_stats := stats["cluster-aggregated-stats"].(map[string]interface{})
+	if err != nil {
+		level.Error(e.Logger).Log("msg", "Failed to pull metrics from aerospike client", "err", err)
+		return
+	}
+	e.setMetricFromASStats(cluster_stats, "open-connections")
+	e.setMetricFromASStats(cluster_stats, "closed-connections")
+	e.setMetricFromASStats(cluster_stats, "connections-attempts")
+	e.setMetricFromASStats(cluster_stats, "connections-successful")
+	e.setMetricFromASStats(cluster_stats, "connections-failed")
+	e.setMetricFromASStats(cluster_stats, "connections-pool-empty")
+	e.setMetricFromASStats(cluster_stats, "node-added-count")
+	e.setMetricFromASStats(cluster_stats, "node-removed-count")
+	e.setMetricFromASStats(cluster_stats, "partition-map-updates")
+	e.setMetricFromASStats(cluster_stats, "tends-total")
+	e.setMetricFromASStats(cluster_stats, "tends-successful")
+	e.setMetricFromASStats(cluster_stats, "tends-failed")
 }
 
 func (e *AerospikeEndpoint) Connect() error {
@@ -87,6 +128,7 @@ func (e *AerospikeEndpoint) Connect() error {
 }
 
 func (e *AerospikeEndpoint) Refresh() error {
+	e.refreshMetrics()
 	if !e.AutoDiscoverNamespaces {
 		return nil
 	}

@@ -24,30 +24,27 @@ var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 }, []string{"cluster", "probe_endpoint", "name"})
 
 type AerospikeEndpoint struct {
-	Name                   string
-	ClusterLevel           bool
-	ClusterName            string
-	Client                 *as.Client
-	Config                 AerospikeClientConfig
-	Logger                 log.Logger
-	AutoDiscoverNamespaces bool
-	Namespaces             map[string]struct{}
+	Name         string
+	ClusterLevel bool
+	ClusterName  string
+	Client       *as.Client
+	Config       AerospikeClientConfig
+	Logger       log.Logger
+	Namespaces   map[string]struct{}
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
 	hash := fmt.Sprintf("%s/%s", e.ClusterName, e.Name)
 	// If Namespaces are pushed through service discovery
 	// the hash should change according to the Namespaces
-	if !e.AutoDiscoverNamespaces {
-		// Make sure the list is always in the same order
-		namespaces := make([]string, 0, len(e.Namespaces))
-		for str := range e.Namespaces {
-			namespaces = append(namespaces, str)
-		}
-		sort.Strings(namespaces)
-		return fmt.Sprintf("%s/ns:%s", hash, namespaces)
+
+	// Make sure the list is always in the same order
+	namespaces := make([]string, 0, len(e.Namespaces))
+	for str := range e.Namespaces {
+		namespaces = append(namespaces, str)
 	}
-	return hash
+	sort.Strings(namespaces)
+	return fmt.Sprintf("%s/ns:%s", hash, namespaces)
 }
 
 func (e *AerospikeEndpoint) GetName() string {
@@ -129,30 +126,6 @@ func (e *AerospikeEndpoint) Connect() error {
 
 func (e *AerospikeEndpoint) Refresh() error {
 	e.refreshMetrics()
-	if !e.AutoDiscoverNamespaces {
-		return nil
-	}
-	nodes := e.Client.GetNodes()
-
-	infop := as.NewInfoPolicy()
-
-	e.Namespaces = make(map[string]struct{})
-	for _, n := range nodes {
-
-		data, err := n.RequestInfo(infop, fmt.Sprintln("sets"))
-		if err != nil {
-			return err
-		}
-		for _, val := range data {
-			matches := setExtractionRegex.FindAllStringSubmatch(val, -1)
-			for _, match := range matches {
-				if len(match) > 1 {
-					e.Namespaces[match[1]] = struct{}{}
-				}
-			}
-		}
-	}
-	level.Debug(e.Logger).Log("msg", fmt.Sprintf("Refresh finished: current Namespaces: %s", e.Namespaces))
 	return nil
 }
 

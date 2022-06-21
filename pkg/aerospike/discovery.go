@@ -48,7 +48,6 @@ func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.
 	}
 
 	namespaces := make(map[string]struct{})
-	autoDiscoverNamespaces := true
 
 	if conf.AerospikeEndpointConfig.NamespaceMetaKey != "" {
 		nsString, ok := entry.Meta[conf.AerospikeEndpointConfig.NamespaceMetaKey]
@@ -57,14 +56,12 @@ func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.
 			for _, ns := range nsFromDiscovery {
 				namespaces[ns] = struct{}{}
 			}
-			autoDiscoverNamespaces = false
 		}
 	}
 
 	return &AerospikeEndpoint{Name: entry.Address,
-		ClusterName:            clusterName,
-		Namespaces:             namespaces,
-		AutoDiscoverNamespaces: autoDiscoverNamespaces,
+		ClusterName: clusterName,
+		Namespaces:  namespaces,
 		Config: AerospikeClientConfig{
 			// auth
 			authEnabled: authEnabled,

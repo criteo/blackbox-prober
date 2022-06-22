@@ -200,6 +200,7 @@ func (pw *ProberWorker) runAllPendingChecks(lastChecks []time.Time) time.Duratio
 
 func (pw *ProberWorker) StartProbing() {
 	level.Info(pw.logger).Log("msg", "starting probing")
+	defer pw.endpoint.Close() // Make sure the client is closed if the probe is stopped
 
 	if len(pw.checks) < 1 {
 		level.Error(pw.logger).Log("msg", "Probe not started no checks registered")
@@ -240,7 +241,7 @@ func (pw *ProberWorker) StartProbing() {
 			}
 			return
 		case <-refreshTicker.C:
-			level.Debug(pw.logger).Log("msg", "Probe endpoint refreshed")
+			level.Debug(pw.logger).Log("msg", "Refreshing probe endpoint")
 			err := pw.endpoint.Refresh()
 			if err != nil {
 				level.Error(pw.logger).Log("msg", "Error while refreshing", "err", err)

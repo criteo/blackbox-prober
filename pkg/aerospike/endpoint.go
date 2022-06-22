@@ -157,5 +157,8 @@ func (e *AerospikeEndpoint) Refresh() error {
 }
 
 func (e *AerospikeEndpoint) Close() error {
+	if e != nil {
+		e.Client.Close()
+	}
 	return nil
 }

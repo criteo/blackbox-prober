@@ -74,7 +74,7 @@ func main() {
 	p := scheduler.NewProbingScheduler(log.With(logger), topo)
 
 	if config.AerospikeChecksConfigs.LatencyCheckConfig.Enable {
-		p.RegisterNewNodeCheck(scheduler.Check{
+		p.RegisterNewClusterCheck(scheduler.Check{
 			Name:       "latency_check",
 			PrepareFn:  scheduler.Noop,
 			CheckFn:    aerospike.LatencyCheck,

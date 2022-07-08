@@ -95,75 +95,77 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	policy.ReplicaPolicy = as.MASTER     // Read are always done on master
 
 	for namespace := range e.Namespaces {
-		e.Client.WarmUp(e.Config.genericConfig.ConnectionQueueSize)
-		// TODO configurable set
-		key, as_err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
-		if as_err != nil {
-			return as_err.Unwrap()
-		}
-		val := as.BinMap{
-			"val": utils.RandomHex(1024),
-		}
-
-		node, err := getWriteNode(e.Client, policy, key)
-		if err != nil {
-			return errors.Wrapf(err, "error when trying to find node for: %s", keyAsStr(key))
-		}
-
-		// PUT OPERATION
-		labels := []string{"put", node.GetHost().Name, namespace, e.ClusterName, node.GetName()}
-
-		opPut := func() error {
-			return e.Client.Put(policy, key, val)
-		}
-
-		err = ObserveOpLatency(opPut, labels)
-		if err != nil {
-			return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
-		}
-		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record put: %s", keyAsStr(key)))
-
-		// GET OPERATION
-		labels[0] = "get"
-		opGet := func() error {
-			recVal, err := e.Client.Get(&policy.BasePolicy, key)
-			if err != nil {
-				return err.Unwrap()
-			}
-			if recVal == nil {
-				return errors.Errorf("Record not found after being put")
-			}
-			if recVal.Bins["val"] != val["val"] {
-				return errors.Errorf("Get succeeded but there is a missmatch between server value {%s} and pushed value", recVal.Bins["val"])
-			}
-			return err
-		}
-
-		err = ObserveOpLatency(opGet, labels)
-		if err != nil {
-			return errors.Wrapf(err, "record get failed for: %s", keyAsStr(key))
-		}
-		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record get: %s", keyAsStr(key)))
-
-		// DELETE OPERATION
-		labels[0] = "delete"
-		opDelete := func() error {
-			existed, as_err := e.Client.Delete(policy, key)
-			if !existed {
-				return errors.Errorf("Delete succeeded but there was no data to delete")
-			}
+		for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
+			e.Client.WarmUp(e.Config.genericConfig.ConnectionQueueSize)
+			// TODO configurable set
+			key, as_err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 			if as_err != nil {
 				return as_err.Unwrap()
-			} else {
-				return nil
 			}
-		}
+			val := as.BinMap{
+				"val": utils.RandomHex(1024),
+			}
 
-		err = ObserveOpLatency(opDelete, labels)
-		if err != nil {
-			return errors.Wrapf(err, "record delete failed for: %s", keyAsStr(key))
+			node, err := getWriteNode(e.Client, policy, key)
+			if err != nil {
+				return errors.Wrapf(err, "error when trying to find node for: %s", keyAsStr(key))
+			}
+
+			// PUT OPERATION
+			labels := []string{"put", node.GetHost().Name, namespace, e.ClusterName, node.GetName()}
+
+			opPut := func() error {
+				return e.Client.Put(policy, key, val)
+			}
+
+			err = ObserveOpLatency(opPut, labels)
+			if err != nil {
+				return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
+			}
+			level.Debug(e.Logger).Log("msg", fmt.Sprintf("record put: %s", keyAsStr(key)))
+
+			// GET OPERATION
+			labels[0] = "get"
+			opGet := func() error {
+				recVal, err := e.Client.Get(&policy.BasePolicy, key)
+				if err != nil {
+					return err.Unwrap()
+				}
+				if recVal == nil {
+					return errors.Errorf("Record not found after being put")
+				}
+				if recVal.Bins["val"] != val["val"] {
+					return errors.Errorf("Get succeeded but there is a missmatch between server value {%s} and pushed value", recVal.Bins["val"])
+				}
+				return err
+			}
+
+			err = ObserveOpLatency(opGet, labels)
+			if err != nil {
+				return errors.Wrapf(err, "record get failed for: %s", keyAsStr(key))
+			}
+			level.Debug(e.Logger).Log("msg", fmt.Sprintf("record get: %s", keyAsStr(key)))
+
+			// DELETE OPERATION
+			labels[0] = "delete"
+			opDelete := func() error {
+				existed, as_err := e.Client.Delete(policy, key)
+				if !existed {
+					return errors.Errorf("Delete succeeded but there was no data to delete")
+				}
+				if as_err != nil {
+					return as_err.Unwrap()
+				} else {
+					return nil
+				}
+			}
+
+			err = ObserveOpLatency(opDelete, labels)
+			if err != nil {
+				return errors.Wrapf(err, "record delete failed for: %s", keyAsStr(key))
+			}
+			level.Debug(e.Logger).Log("msg", fmt.Sprintf("record delete: %s", keyAsStr(key)))
 		}
-		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record delete: %s", keyAsStr(key)))
 	}
 	return nil
 }

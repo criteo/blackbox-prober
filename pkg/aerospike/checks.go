@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	as "github.com/aerospike/aerospike-client-go"
+	as "github.com/aerospike/aerospike-client-go/v5"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
 	"github.com/go-kit/log/level"
@@ -49,11 +49,11 @@ var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 func getWriteNode(c *as.Client, policy *as.WritePolicy, key *as.Key) (*as.Node, error) {
 	partition, err := as.PartitionForWrite(c.Cluster(), &policy.BasePolicy, key)
 	if err != nil {
-		return nil, err
+		return nil, err.Unwrap()
 	}
 	node, err := partition.GetNodeWrite(c.Cluster())
 	if err != nil {
-		return nil, err
+		return nil, err.Unwrap()
 	}
 	return node, nil
 }
@@ -97,9 +97,9 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	for namespace := range e.Namespaces {
 		e.Client.WarmUp(e.Config.genericConfig.ConnectionQueueSize)
 		// TODO configurable set
-		key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
-		if err != nil {
-			return err
+		key, as_err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
+		if as_err != nil {
+			return as_err.Unwrap()
 		}
 		val := as.BinMap{
 			"val": utils.RandomHex(1024),
@@ -128,7 +128,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		opGet := func() error {
 			recVal, err := e.Client.Get(&policy.BasePolicy, key)
 			if err != nil {
-				return err
+				return err.Unwrap()
 			}
 			if recVal == nil {
 				return errors.Errorf("Record not found after being put")
@@ -148,11 +148,15 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		// DELETE OPERATION
 		labels[0] = "delete"
 		opDelete := func() error {
-			existed, err := e.Client.Delete(policy, key)
+			existed, as_err := e.Client.Delete(policy, key)
 			if !existed {
-				err = errors.Errorf("Delete succeeded but there was no data to delete")
+				return errors.Errorf("Delete succeeded but there was no data to delete")
 			}
-			return err
+			if as_err != nil {
+				return as_err.Unwrap()
+			} else {
+				return nil
+			}
 		}
 
 		err = ObserveOpLatency(opDelete, labels)

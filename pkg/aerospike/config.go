@@ -1,8 +1,8 @@
 package aerospike
 
 import (
-	as "github.com/aerospike/aerospike-client-go"
 	asl "github.com/aerospike/aerospike-client-go/logger"
+	as "github.com/aerospike/aerospike-client-go/v5"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
 	"github.com/pkg/errors"

@@ -194,8 +194,8 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 		}
 
 		recVal, err := e.Client.Get(&policy.BasePolicy, allPushedFlag)
-		if err != nil && err != as.ErrKeyNotFound {
-			level.Debug(e.Logger).Log("msg", "called")
+
+		if err != nil && !err.Matches(as.ErrKeyNotFound.ResultCode) {
 			return err
 		}
 		// If the flag was found we skip the init as it has already been done

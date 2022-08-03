@@ -194,7 +194,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 		}
 
 		recVal, err := e.Client.Get(&policy.BasePolicy, allPushedFlag)
-		if err != nil && err.Error() != "Key not found" {
+		if err != nil && err != as.ErrKeyNotFound {
 			level.Debug(e.Logger).Log("msg", "called")
 			return err
 		}

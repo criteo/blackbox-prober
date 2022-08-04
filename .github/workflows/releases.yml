@@ -26,8 +26,10 @@ jobs:
         fi
     - name: Build
       run: make build_linux
+    - name: Package
+      run: tar -czvf blackbox-prober.tar.gz build/
     - name: Upload
       uses: fnkr/github-action-ghr@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GHR_PATH: build/
+        GHR_PATH: blackbox-prober.tar.gz

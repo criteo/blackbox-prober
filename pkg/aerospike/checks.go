@@ -49,11 +49,11 @@ var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 func getWriteNode(c *as.Client, policy *as.WritePolicy, key *as.Key) (*as.Node, error) {
 	partition, err := as.PartitionForWrite(c.Cluster(), &policy.BasePolicy, key)
 	if err != nil {
-		return nil, err.Unwrap()
+		return nil, err
 	}
 	node, err := partition.GetNodeWrite(c.Cluster())
 	if err != nil {
-		return nil, err.Unwrap()
+		return nil, err
 	}
 	return node, nil
 }
@@ -100,7 +100,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			// TODO configurable set
 			key, as_err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 			if as_err != nil {
-				return as_err.Unwrap()
+				return as_err
 			}
 			val := as.BinMap{
 				"val": utils.RandomHex(1024),
@@ -129,7 +129,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			opGet := func() error {
 				recVal, err := e.Client.Get(&policy.BasePolicy, key)
 				if err != nil {
-					return err.Unwrap()
+					return err
 				}
 				if recVal == nil {
 					return errors.Errorf("Record not found after being put")
@@ -154,7 +154,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 					return errors.Errorf("Delete succeeded but there was no data to delete")
 				}
 				if as_err != nil {
-					return as_err.Unwrap()
+					return as_err
 				} else {
 					return nil
 				}

@@ -108,6 +108,7 @@ func (ps *ProbingScheduler) Start() {
 			ps.stopWorkerForEndpoint(endpoint)
 		}
 
+		any_failed_update := false
 		for _, endpoint := range toAddEndpoints {
 			if endpoint.IsCluster() {
 				if len(ps.clusterChecks) > 0 {
@@ -115,6 +116,7 @@ func (ps *ProbingScheduler) Start() {
 					if err != nil {
 						level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
 						SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
+						any_failed_update = true
 						continue
 					}
 				} else {
@@ -126,6 +128,7 @@ func (ps *ProbingScheduler) Start() {
 					if err != nil {
 						level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
 						SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
+						any_failed_update = true
 						continue
 					}
 				} else {
@@ -133,7 +136,10 @@ func (ps *ProbingScheduler) Start() {
 				}
 			}
 		}
-		ps.currentTopology = newTopology
+		// Only update the topology if all probes successfully started
+		if !any_failed_update {
+			ps.currentTopology = newTopology
+		}
 	}
 }
 
@@ -150,6 +156,12 @@ func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEnd
 }
 
 func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) error {
+	// If the worker is already started, do not start it again (avoid leaking or flapping)
+	_, ok := ps.workerControlChans[endpoint.GetHash()]
+	if ok {
+		level.Info(ps.logger).Log("msg", fmt.Sprintf("Probe already started for %s", endpoint.GetName()))
+	}
+
 	wc := make(chan bool, 1)
 	w := ProberWorker{logger: log.With(ps.logger, "endpoint_name", endpoint.GetName(), "endpoint_hash", endpoint.GetHash()),
 		endpoint: endpoint, checks: checks,

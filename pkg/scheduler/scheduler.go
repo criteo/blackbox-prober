@@ -167,9 +167,20 @@ func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, 
 		endpoint: endpoint, checks: checks,
 		controlChan: wc, refreshInterval: 30 * time.Second}
 
+	// Checking if the probe will work properly once it is in its own goroutine. It is easier to validate the endpoint
+	// now than after the probe is started. If it fails here, the topology update will fail and be scheduled at next
+	// run.
+
+	// Make sure the endpoint is connectable
 	err := w.endpoint.Connect()
 	if err != nil {
 		return errors.Wrapf(err, "Init failure during connection to endpoint %s", w.endpoint.GetHash())
+	}
+
+	// Make sure the probe is able to prepare the endpoint
+	err = w.PrepareProbing()
+	if err != nil {
+		return errors.Wrapf(err, "Init failure during preparation of endpoint %s", w.endpoint.GetHash())
 	}
 
 	ps.workerControlChans[endpoint.GetHash()] = wc
@@ -210,6 +221,17 @@ func (pw *ProberWorker) runAllPendingChecks(lastChecks []time.Time) time.Duratio
 	return time.Until(soonestCheck)
 }
 
+func (pw *ProberWorker) PrepareProbing() error {
+	for _, check := range pw.checks {
+		err := check.PrepareFn(pw.endpoint)
+		if err != nil {
+			level.Error(pw.logger).Log("msg", fmt.Sprintf("Error while preparing %s", check.Name), "err", err)
+			return err
+		}
+	}
+	return nil
+}
+
 func (pw *ProberWorker) StartProbing() {
 	level.Info(pw.logger).Log("msg", "starting probing")
 	defer pw.endpoint.Close() // Make sure the client is closed if the probe is stopped
@@ -221,13 +243,10 @@ func (pw *ProberWorker) StartProbing() {
 
 	lastChecks := make([]time.Time, len(pw.checks))
 
+	// Find when is the earliest check to execute
 	nextCheckWaitTime := pw.checks[0].Interval
 	for i, check := range pw.checks {
 		lastChecks[i] = time.Now()
-		err := check.PrepareFn(pw.endpoint)
-		if err != nil {
-			level.Error(pw.logger).Log("msg", fmt.Sprintf("Error while preparing %s", check.Name), "err", err)
-		}
 		if nextCheckWaitTime > check.Interval {
 			nextCheckWaitTime = check.Interval
 		}

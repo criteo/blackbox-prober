@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"regexp"
-	"sort"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -30,21 +29,11 @@ type AerospikeEndpoint struct {
 	Client       *as.Client
 	Config       AerospikeClientConfig
 	Logger       log.Logger
-	Namespaces   map[string]struct{}
+	Namespace    string
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
-	hash := fmt.Sprintf("%s/%s", e.ClusterName, e.Name)
-	// If Namespaces are pushed through service discovery
-	// the hash should change according to the Namespaces
-
-	// Make sure the list is always in the same order
-	namespaces := make([]string, 0, len(e.Namespaces))
-	for str := range e.Namespaces {
-		namespaces = append(namespaces, str)
-	}
-	sort.Strings(namespaces)
-	return fmt.Sprintf("%s/ns:%s", hash, namespaces)
+	return fmt.Sprintf("%s/%s/ns:%s", e.ClusterName, e.Name, e.Namespace)
 }
 
 func (e *AerospikeEndpoint) GetName() string {

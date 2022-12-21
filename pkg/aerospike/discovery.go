@@ -14,7 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 )
 
-func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.Logger, entry discovery.ServiceEntry) (*AerospikeEndpoint, error) {
+func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry) ([]*AerospikeEndpoint, error) {
 	authEnabled := conf.AerospikeEndpointConfig.AuthEnabled
 	var (
 		username    string
@@ -47,53 +47,62 @@ func (conf *AerospikeProbeConfig) generateAerospikeEndpointFromEntry(logger log.
 		clusterName = entry.Address
 	}
 
-	namespaces := make(map[string]struct{})
+	namespaces := conf.getNamespacesFromEntry(entry)
 
-	if conf.AerospikeEndpointConfig.NamespaceMetaKey != "" {
-		nsString, ok := entry.Meta[conf.AerospikeEndpointConfig.NamespaceMetaKey]
-		if ok {
-			nsFromDiscovery := strings.Split(nsString, ";")
-			for _, ns := range nsFromDiscovery {
-				namespaces[ns] = struct{}{}
-			}
+	var endpoints []*AerospikeEndpoint
+	for namespace := range namespaces {
+		e := &AerospikeEndpoint{Name: clusterName,
+			ClusterName:  clusterName,
+			Namespace:    namespace,
+			ClusterLevel: true,
+			Config: AerospikeClientConfig{
+				// auth
+				authEnabled: authEnabled,
+				username:    username,
+				password:    password,
+				// tls
+				tlsEnabled:  tlsEnabled,
+				tlsHostname: tlsHostname,
+				// conf
+				genericConfig: &conf.AerospikeEndpointConfig,
+				// Contact point
+				host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port}},
+			Logger: log.With(logger, "endpoint_name", entry.Address),
+		}
+		endpoints = append(endpoints, e)
+	}
+
+	return endpoints, nil
+}
+
+func (conf AerospikeProbeConfig) getNamespacesFromEntry(entry discovery.ServiceEntry) map[string]struct{} {
+	namespaces := make(map[string]struct{})
+	nsString, ok := entry.Meta[conf.AerospikeEndpointConfig.NamespaceMetaKey]
+	if ok {
+		nsFromDiscovery := strings.Split(nsString, ";")
+		for _, ns := range nsFromDiscovery {
+			namespaces[ns] = struct{}{}
 		}
 	}
-
-	return &AerospikeEndpoint{Name: entry.Address,
-		ClusterName: clusterName,
-		Namespaces:  namespaces,
-		Config: AerospikeClientConfig{
-			// auth
-			authEnabled: authEnabled,
-			username:    username,
-			password:    password,
-			// tls
-			tlsEnabled:  tlsEnabled,
-			tlsHostname: tlsHostname,
-			// conf
-			genericConfig: &conf.AerospikeEndpointConfig,
-			// Contact point
-			host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port}},
-		Logger: log.With(logger, "endpoint_name", entry.Address),
-	}, nil
+	return namespaces
 }
 
-func (conf AerospikeProbeConfig) generateNodeFromEntry(logger log.Logger, entry discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
-	return conf.generateAerospikeEndpointFromEntry(logger, entry)
-}
+func (conf AerospikeProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
+	return func(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
+		clusterMap := topology.NewClusterMap()
+		clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
+		for _, entries := range clusterEntries {
+			endpoints, err := conf.generateNamespacedEndpointsFromEntry(logger, entries[0])
+			if err != nil {
+				return clusterMap, err
+			}
 
-func (conf AerospikeProbeConfig) generateClusterFromEntries(logger log.Logger, entries []discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
-	endpoint, err := conf.generateAerospikeEndpointFromEntry(logger, entries[0])
-	if err != nil {
-		return endpoint, err
+			for _, endpoint := range endpoints {
+				cluster := topology.NewCluster(endpoint)
+				clusterMap.AppendCluster(cluster)
+			}
+
+		}
+		return clusterMap, nil
 	}
-	endpoint.Name = entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
-	endpoint.ClusterName = entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
-	endpoint.Logger = log.With(logger, "endpoint_name", endpoint.Name)
-	endpoint.ClusterLevel = true
-	return endpoint, nil
-}
-
-func (conf AerospikeProbeConfig) GenerateTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
-	return conf.DiscoveryConfig.GetGenericTopologyBuilder(conf.generateClusterFromEntries, conf.generateNodeFromEntry)
 }

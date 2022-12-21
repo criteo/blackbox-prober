@@ -94,78 +94,76 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	policy.MaxRetries = 0                // Ensure we never retry
 	policy.ReplicaPolicy = as.MASTER     // Read are always done on master
 
-	for namespace := range e.Namespaces {
-		for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
-			e.Client.WarmUp(e.Config.genericConfig.ConnectionQueueSize)
-			// TODO configurable set
-			key, as_err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
-			if as_err != nil {
-				return as_err
-			}
-			val := as.BinMap{
-				"val": utils.RandomHex(1024),
-			}
+	for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
+		e.Client.WarmUp(e.Config.genericConfig.ConnectionQueueSize)
+		// TODO configurable set
+		key, as_err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
+		if as_err != nil {
+			return as_err
+		}
+		val := as.BinMap{
+			"val": utils.RandomHex(1024),
+		}
 
-			node, err := getWriteNode(e.Client, policy, key)
+		node, err := getWriteNode(e.Client, policy, key)
+		if err != nil {
+			return errors.Wrapf(err, "error when trying to find node for: %s", keyAsStr(key))
+		}
+
+		// PUT OPERATION
+		labels := []string{"put", node.GetHost().Name, e.Namespace, e.ClusterName, node.GetName()}
+
+		opPut := func() error {
+			return e.Client.Put(policy, key, val)
+		}
+
+		err = ObserveOpLatency(opPut, labels)
+		if err != nil {
+			return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
+		}
+		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record put: %s", keyAsStr(key)))
+
+		// GET OPERATION
+		labels[0] = "get"
+		opGet := func() error {
+			recVal, err := e.Client.Get(&policy.BasePolicy, key)
 			if err != nil {
-				return errors.Wrapf(err, "error when trying to find node for: %s", keyAsStr(key))
-			}
-
-			// PUT OPERATION
-			labels := []string{"put", node.GetHost().Name, namespace, e.ClusterName, node.GetName()}
-
-			opPut := func() error {
-				return e.Client.Put(policy, key, val)
-			}
-
-			err = ObserveOpLatency(opPut, labels)
-			if err != nil {
-				return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
-			}
-			level.Debug(e.Logger).Log("msg", fmt.Sprintf("record put: %s", keyAsStr(key)))
-
-			// GET OPERATION
-			labels[0] = "get"
-			opGet := func() error {
-				recVal, err := e.Client.Get(&policy.BasePolicy, key)
-				if err != nil {
-					return err
-				}
-				if recVal == nil {
-					return errors.Errorf("Record not found after being put")
-				}
-				if recVal.Bins["val"] != val["val"] {
-					return errors.Errorf("Get succeeded but there is a missmatch between server value {%s} and pushed value", recVal.Bins["val"])
-				}
 				return err
 			}
-
-			err = ObserveOpLatency(opGet, labels)
-			if err != nil {
-				return errors.Wrapf(err, "record get failed for: %s", keyAsStr(key))
+			if recVal == nil {
+				return errors.Errorf("Record not found after being put")
 			}
-			level.Debug(e.Logger).Log("msg", fmt.Sprintf("record get: %s", keyAsStr(key)))
-
-			// DELETE OPERATION
-			labels[0] = "delete"
-			opDelete := func() error {
-				existed, as_err := e.Client.Delete(policy, key)
-				if !existed {
-					return errors.Errorf("Delete succeeded but there was no data to delete")
-				}
-				if as_err != nil {
-					return as_err
-				} else {
-					return nil
-				}
+			if recVal.Bins["val"] != val["val"] {
+				return errors.Errorf("Get succeeded but there is a missmatch between server value {%s} and pushed value", recVal.Bins["val"])
 			}
-
-			err = ObserveOpLatency(opDelete, labels)
-			if err != nil {
-				return errors.Wrapf(err, "record delete failed for: %s", keyAsStr(key))
-			}
-			level.Debug(e.Logger).Log("msg", fmt.Sprintf("record delete: %s", keyAsStr(key)))
+			return err
 		}
+
+		err = ObserveOpLatency(opGet, labels)
+		if err != nil {
+			return errors.Wrapf(err, "record get failed for: %s", keyAsStr(key))
+		}
+		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record get: %s", keyAsStr(key)))
+
+		// DELETE OPERATION
+		labels[0] = "delete"
+		opDelete := func() error {
+			existed, as_err := e.Client.Delete(policy, key)
+			if !existed {
+				return errors.Errorf("Delete succeeded but there was no data to delete")
+			}
+			if as_err != nil {
+				return as_err
+			} else {
+				return nil
+			}
+		}
+
+		err = ObserveOpLatency(opDelete, labels)
+		if err != nil {
+			return errors.Wrapf(err, "record delete failed for: %s", keyAsStr(key))
+		}
+		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record delete: %s", keyAsStr(key)))
 	}
 	return nil
 }
@@ -186,50 +184,48 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	// If the probe find a missmatch it will repush the keys
 	expectedAllPushedFlagVal := fmt.Sprintf("%s:%d", "v1", keyRange) // v1 represents the format of the data stored.
 
-	for namespace := range e.Namespaces {
-		// allPushedFlag indicate if a probe have pushed all data once
-		allPushedFlag, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, "all_pushed_flag"))
-		if err != nil {
-			return err
-		}
-
-		recVal, err := e.Client.Get(&policy.BasePolicy, allPushedFlag)
-
-		if err != nil && !err.Matches(as.ErrKeyNotFound.ResultCode) {
-			return err
-		}
-		// If the flag was found we skip the init as it has already been done
-		if recVal != nil && recVal.Bins["val"] == expectedAllPushedFlagVal {
-			continue
-		}
-
-		for i := 0; i < keyRange; i++ {
-			keyName := fmt.Sprintf("%s%d", keyPrefix, i)
-			key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, keyName)
-			if err != nil {
-				return err
-			}
-
-			val := as.BinMap{
-				"val": hash(keyName),
-			}
-
-			err = e.Client.Put(policy, key, val)
-			if err != nil {
-				return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
-			}
-			level.Debug(e.Logger).Log("msg", fmt.Sprintf("record durability put: %s (%s)", keyAsStr(key), val["val"]))
-		}
-
-		allPushedFlagVal := as.BinMap{
-			"val": expectedAllPushedFlagVal,
-		}
-		err = e.Client.Put(policy, allPushedFlag, allPushedFlagVal)
-		if err != nil {
-			return errors.Wrapf(err, "Push flag put failed for: %s", keyAsStr(allPushedFlag))
-		}
-
+	// allPushedFlag indicate if a probe have pushed all data once
+	allPushedFlag, err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, "all_pushed_flag"))
+	if err != nil {
+		return err
 	}
+
+	recVal, err := e.Client.Get(&policy.BasePolicy, allPushedFlag)
+
+	if err != nil && !err.Matches(as.ErrKeyNotFound.ResultCode) {
+		return err
+	}
+	// If the flag was found we skip the init as it has already been done
+	if recVal != nil && recVal.Bins["val"] == expectedAllPushedFlagVal {
+		return nil
+	}
+
+	for i := 0; i < keyRange; i++ {
+		keyName := fmt.Sprintf("%s%d", keyPrefix, i)
+		key, err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, keyName)
+		if err != nil {
+			return err
+		}
+
+		val := as.BinMap{
+			"val": hash(keyName),
+		}
+
+		err = e.Client.Put(policy, key, val)
+		if err != nil {
+			return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
+		}
+		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record durability put: %s (%s)", keyAsStr(key), val["val"]))
+	}
+
+	allPushedFlagVal := as.BinMap{
+		"val": expectedAllPushedFlagVal,
+	}
+	err = e.Client.Put(policy, allPushedFlag, allPushedFlagVal)
+	if err != nil {
+		return errors.Wrapf(err, "Push flag put failed for: %s", keyAsStr(allPushedFlag))
+	}
+
 	return nil
 }
 
@@ -243,34 +239,32 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	keyRange := e.Config.genericConfig.DurabilityKeyTotal
 	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
 
-	for namespace := range e.Namespaces {
-		total_found_items := 0.0
-		total_corrupted_items := 0.0
-		for i := 0; i < keyRange; i++ {
-			keyName := fmt.Sprintf("%s%d", keyPrefix, i)
-			key, err := as.NewKey(namespace, e.Config.genericConfig.MonitoringSet, keyName)
-			if err != nil {
-				return err
-			}
-
-			recVal, err := e.Client.Get(policy, key)
-			if err != nil {
-				level.Error(e.Logger).Log("msg", fmt.Sprintf("Error while fetching record: %s", keyAsStr(key)), "err", err)
-				continue
-			}
-			if recVal.Bins["val"] != hash(keyName) {
-				level.Warn(e.Logger).Log("msg",
-					fmt.Sprintf("Get successful but the data didn't match what was expected got: '%s', expected: '%s' (for %s)",
-						recVal.Bins["val"], hash(keyName), keyAsStr(key)))
-				total_corrupted_items += 1
-			} else {
-				total_found_items += 1
-			}
-			level.Debug(e.Logger).Log("msg", fmt.Sprintf("durability record validated: %s (%s)", keyAsStr(key), recVal.Bins["val"]))
+	total_found_items := 0.0
+	total_corrupted_items := 0.0
+	for i := 0; i < keyRange; i++ {
+		keyName := fmt.Sprintf("%s%d", keyPrefix, i)
+		key, err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, keyName)
+		if err != nil {
+			return err
 		}
-		durabilityExpectedItems.WithLabelValues(namespace, e.ClusterName, e.GetName()).Set(float64(keyRange))
-		durabilityFoundItems.WithLabelValues(namespace, e.ClusterName, e.GetName()).Set(total_found_items)
-		durabilityCorruptedItems.WithLabelValues(namespace, e.ClusterName, e.GetName()).Set(total_corrupted_items)
+
+		recVal, err := e.Client.Get(policy, key)
+		if err != nil {
+			level.Error(e.Logger).Log("msg", fmt.Sprintf("Error while fetching record: %s", keyAsStr(key)), "err", err)
+			continue
+		}
+		if recVal.Bins["val"] != hash(keyName) {
+			level.Warn(e.Logger).Log("msg",
+				fmt.Sprintf("Get successful but the data didn't match what was expected got: '%s', expected: '%s' (for %s)",
+					recVal.Bins["val"], hash(keyName), keyAsStr(key)))
+			total_corrupted_items += 1
+		} else {
+			total_found_items += 1
+		}
+		level.Debug(e.Logger).Log("msg", fmt.Sprintf("durability record validated: %s (%s)", keyAsStr(key), recVal.Bins["val"]))
 	}
+	durabilityExpectedItems.WithLabelValues(e.Namespace, e.ClusterName, e.GetName()).Set(float64(keyRange))
+	durabilityFoundItems.WithLabelValues(e.Namespace, e.ClusterName, e.GetName()).Set(total_found_items)
+	durabilityCorruptedItems.WithLabelValues(e.Namespace, e.ClusterName, e.GetName()).Set(total_corrupted_items)
 	return nil
 }

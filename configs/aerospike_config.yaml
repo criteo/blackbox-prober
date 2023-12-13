@@ -37,6 +37,8 @@ client_config:
   ### Client connection configuration ###
   connection_queue_size: 2 # Avoid creating too many connections. We don't need many as we duplicate the clients many times
   opening_connection_threshold: 1
+  tend_interval: 1s
+  min_connections_per_node: 1
 checks_configs:
   latency_check:
     enable: true

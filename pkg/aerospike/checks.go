@@ -93,6 +93,8 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	policy := as.NewWritePolicy(0, 3600) // Expire after one hour if the delete didn't work
 	policy.MaxRetries = 0                // Ensure we never retry
 	policy.ReplicaPolicy = as.MASTER     // Read are always done on master
+	// Do not wait until timeout if connections cannot be open
+	policy.ExitFastOnExhaustedConnectionPool = e.Config.genericConfig.ExitFastOnExhaustedConnectionPool
 
 	for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
 		// TODO configurable set

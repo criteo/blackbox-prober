@@ -39,6 +39,7 @@ client_config:
   opening_connection_threshold: 1
   tend_interval: 1s
   min_connections_per_node: 1
+  exit_fast_on_exhausted_connection_pool: False
 checks_configs:
   latency_check:
     enable: true

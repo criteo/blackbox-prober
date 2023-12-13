@@ -95,7 +95,6 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	policy.ReplicaPolicy = as.MASTER     // Read are always done on master
 
 	for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
-		e.Client.WarmUp(e.Config.genericConfig.ConnectionQueueSize)
 		// TODO configurable set
 		key, as_err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 		if as_err != nil {

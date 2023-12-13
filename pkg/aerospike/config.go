@@ -42,34 +42,36 @@ type AerospikeEndpointConfig struct {
 	// Metadata key to get the Hostname to use for TLS auth (only used if tlsTag is set)
 	TLSHostnameMetaKey string `yaml:"tls_hostname_meta_key,omitempty"`
 	// Probe configuration
-	NamespaceMetaKey           string        `yaml:"namespace_meta_key,omitempty"`
-	MonitoringSet              string        `yaml:"monitoring_set,omitempty"`
-	LatencyKeyPrefix           string        `yaml:"latency_key_prefix,omitempty"`
-	DurabilityKeyPrefix        string        `yaml:"durability_key_prefix,omitempty"`
-	DurabilityKeyTotal         int           `yaml:"durability_key_total,omitempty"`
-	ConnectionQueueSize        int           `yaml:"connection_queue_size,omitempty"`
-	OpeningConnectionThreshold int           `yaml:"opening_connection_threshold,omitempty"`
-	MinConnectionsPerNode      int           `yaml:"min_connections_per_node,omitempty"`
-	TendInterval               time.Duration `yaml:"tend_interval,omitempty"`
+	NamespaceMetaKey                  string        `yaml:"namespace_meta_key,omitempty"`
+	MonitoringSet                     string        `yaml:"monitoring_set,omitempty"`
+	LatencyKeyPrefix                  string        `yaml:"latency_key_prefix,omitempty"`
+	DurabilityKeyPrefix               string        `yaml:"durability_key_prefix,omitempty"`
+	DurabilityKeyTotal                int           `yaml:"durability_key_total,omitempty"`
+	ConnectionQueueSize               int           `yaml:"connection_queue_size,omitempty"`
+	OpeningConnectionThreshold        int           `yaml:"opening_connection_threshold,omitempty"`
+	MinConnectionsPerNode             int           `yaml:"min_connections_per_node,omitempty"`
+	TendInterval                      time.Duration `yaml:"tend_interval,omitempty"`
+	ExitFastOnExhaustedConnectionPool bool          `yaml:"exit_fast_on_exhausted_connection_pool,omitempty"`
 }
 
 var (
 	defaultAerospikeClient = AerospikeEndpointConfig{
-		AuthEnabled:                true,
-		AuthExternal:               true,
-		UsernameEnv:                "AEROSPIKE_USERNAME",
-		PasswordEnv:                "AEROSPIKE_PASSWORD",
-		TLSTag:                     "tls",
-		TLSHostnameMetaKey:         "tls-hostname",
-		NamespaceMetaKey:           "",
-		MonitoringSet:              "monitoring",
-		LatencyKeyPrefix:           "monitoring_latency_",
-		DurabilityKeyPrefix:        "monitoring_durability_",
-		DurabilityKeyTotal:         10000,
-		ConnectionQueueSize:        256,
-		OpeningConnectionThreshold: 0,
-		MinConnectionsPerNode:      0,
-		TendInterval:               time.Second,
+		AuthEnabled:                       true,
+		AuthExternal:                      true,
+		UsernameEnv:                       "AEROSPIKE_USERNAME",
+		PasswordEnv:                       "AEROSPIKE_PASSWORD",
+		TLSTag:                            "tls",
+		TLSHostnameMetaKey:                "tls-hostname",
+		NamespaceMetaKey:                  "",
+		MonitoringSet:                     "monitoring",
+		LatencyKeyPrefix:                  "monitoring_latency_",
+		DurabilityKeyPrefix:               "monitoring_durability_",
+		DurabilityKeyTotal:                10000,
+		ConnectionQueueSize:               256,
+		OpeningConnectionThreshold:        0,
+		MinConnectionsPerNode:             0,
+		TendInterval:                      time.Second,
+		ExitFastOnExhaustedConnectionPool: false,
 	}
 )
 

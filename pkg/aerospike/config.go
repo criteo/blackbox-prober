@@ -1,6 +1,8 @@
 package aerospike
 
 import (
+	"time"
+
 	asl "github.com/aerospike/aerospike-client-go/logger"
 	as "github.com/aerospike/aerospike-client-go/v5"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
@@ -40,13 +42,15 @@ type AerospikeEndpointConfig struct {
 	// Metadata key to get the Hostname to use for TLS auth (only used if tlsTag is set)
 	TLSHostnameMetaKey string `yaml:"tls_hostname_meta_key,omitempty"`
 	// Probe configuration
-	NamespaceMetaKey           string `yaml:"namespace_meta_key,omitempty"`
-	MonitoringSet              string `yaml:"monitoring_set,omitempty"`
-	LatencyKeyPrefix           string `yaml:"latency_key_prefix,omitempty"`
-	DurabilityKeyPrefix        string `yaml:"durability_key_prefix,omitempty"`
-	DurabilityKeyTotal         int    `yaml:"durability_key_total,omitempty"`
-	ConnectionQueueSize        int    `yaml:"connection_queue_size,omitempty"`
-	OpeningConnectionThreshold int    `yaml:"opening_connection_threshold,omitempty"`
+	NamespaceMetaKey           string        `yaml:"namespace_meta_key,omitempty"`
+	MonitoringSet              string        `yaml:"monitoring_set,omitempty"`
+	LatencyKeyPrefix           string        `yaml:"latency_key_prefix,omitempty"`
+	DurabilityKeyPrefix        string        `yaml:"durability_key_prefix,omitempty"`
+	DurabilityKeyTotal         int           `yaml:"durability_key_total,omitempty"`
+	ConnectionQueueSize        int           `yaml:"connection_queue_size,omitempty"`
+	OpeningConnectionThreshold int           `yaml:"opening_connection_threshold,omitempty"`
+	MinConnectionsPerNode      int           `yaml:"min_connections_per_node,omitempty"`
+	TendInterval               time.Duration `yaml:"tend_interval,omitempty"`
 }
 
 var (
@@ -64,6 +68,8 @@ var (
 		DurabilityKeyTotal:         10000,
 		ConnectionQueueSize:        256,
 		OpeningConnectionThreshold: 0,
+		MinConnectionsPerNode:      0,
+		TendInterval:               time.Second,
 	}
 )
 

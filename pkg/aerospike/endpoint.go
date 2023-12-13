@@ -82,6 +82,8 @@ func (e *AerospikeEndpoint) Connect() error {
 	clientPolicy := as.NewClientPolicy()
 	clientPolicy.ConnectionQueueSize = e.Config.genericConfig.ConnectionQueueSize
 	clientPolicy.OpeningConnectionThreshold = e.Config.genericConfig.OpeningConnectionThreshold
+	clientPolicy.MinConnectionsPerNode = e.Config.genericConfig.MinConnectionsPerNode
+	clientPolicy.TendInterval = e.Config.genericConfig.TendInterval
 
 	if e.Config.tlsEnabled {
 		// Setup TLS Config

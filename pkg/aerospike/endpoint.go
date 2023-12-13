@@ -20,7 +20,7 @@ var (
 var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_aerospike_client_cluster_stats",
 	Help: "Cluster aggregated metrics from the go aerospike client",
-}, []string{"cluster", "probe_endpoint", "name"})
+}, []string{"cluster", "probe_endpoint", "namespace", "name"})
 
 type AerospikeEndpoint struct {
 	Name         string
@@ -54,7 +54,7 @@ func (e *AerospikeEndpoint) setMetricFromASStats(stats map[string]interface{}, k
 	if !ok {
 		return
 	}
-	clusterStats.WithLabelValues(e.ClusterName, e.GetName(), key).Set(value)
+	clusterStats.WithLabelValues(e.ClusterName, e.GetName(), e.Namespace, key).Set(value)
 }
 
 func (e *AerospikeEndpoint) refreshMetrics() {

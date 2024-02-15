@@ -88,9 +88,7 @@ func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry
 		ready, err := strconv.ParseBool(metaValue)
 		// if the value of the NamespaceMetaKeyPrefix MetaData is not a boolean then fallback to the old method
 		if err != nil {
-			level.Warn(logger).Log("Fail to parse boolean value from MetaData %s. Will fallback to deprecated %s",
-				metaKey, conf.AerospikeEndpointConfig.NamespaceMetaKeyPrefix)
-			level.Warn(logger).Log(err.Error())
+			level.Error(logger).Log("msg", fmt.Sprintf("Fail to parse boolean value from MetaData %s. Fallbacking to deprecated method.", metaKey), "err", err)
 			fallback = true
 			break
 		}

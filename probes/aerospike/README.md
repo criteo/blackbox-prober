@@ -2,18 +2,28 @@
 
 ## Namespace discovery
 
-The probe is not discovering namespaces automatically. The `namespace_meta_key`
+The probe is not discovering namespaces automatically. The `namespace_meta_key_prefix`
 needs to be defined on the cluster's consul services for the probe to discover them
 The probe will not do any checking without at least one namespace specified.
 
 Example:
-`namespace_meta_key` per default is set to `aerospike-namespaces`. The value
-is a set of namespace name separated by a semicolon `;`.  
+`namespace_meta_key_prefix` per default is set to `aerospike-monitoring-`.
 
-Example: advertising "foo" and "bar" namespace
+For advertising "foo" and "bar" namespace
 
-`aerospike-namespaces: "foo;bar"`
+`aerospike-monitoring-foo: true`
+`aerospike-monitoring-bar: true`
 
+If any of these MetaData entries are not present of does not define a bool value
+then it will fallback to the old method of namespace discovery:
+`namespace_meta_key` which contains namespaces separated by `;`
+
+Example:
+`namespace_meta_key` per default is set to `aerospike-namespaces`.
+
+For advertising "foo" and "bar" namespace
+
+`aerospike-namespaces: foo;bar`
 
 ## Latency checks executed at cluster level
 

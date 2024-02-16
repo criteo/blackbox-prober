@@ -3,6 +3,7 @@ package aerospike
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	as "github.com/aerospike/aerospike-client-go/v5"
@@ -47,7 +48,7 @@ func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger lo
 		clusterName = entry.Address
 	}
 
-	namespaces := conf.getNamespacesFromEntry(entry)
+	namespaces := conf.getNamespacesFromEntry(logger, entry)
 
 	var endpoints []*AerospikeEndpoint
 	for namespace := range namespaces {
@@ -75,15 +76,45 @@ func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger lo
 	return endpoints, nil
 }
 
-func (conf AerospikeProbeConfig) getNamespacesFromEntry(entry discovery.ServiceEntry) map[string]struct{} {
+func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry discovery.ServiceEntry) map[string]struct{} {
 	namespaces := make(map[string]struct{})
-	nsString, ok := entry.Meta[conf.AerospikeEndpointConfig.NamespaceMetaKey]
-	if ok {
-		nsFromDiscovery := strings.Split(nsString, ";")
-		for _, ns := range nsFromDiscovery {
-			namespaces[ns] = struct{}{}
+	fallback := false
+
+	// Correct way to get namespaces.
+	for metaKey, metaValue := range entry.Meta {
+		if !strings.HasPrefix(metaKey, conf.AerospikeEndpointConfig.NamespaceMetaKeyPrefix) {
+			continue
+		}
+		ready, err := strconv.ParseBool(metaValue)
+		// if the value of the NamespaceMetaKeyPrefix MetaData is not a boolean then fallback to the old method
+		if err != nil {
+			level.Error(logger).Log("msg", fmt.Sprintf("Fail to parse boolean value from MetaData %s. Fallbacking to deprecated method.", metaKey), "err", err)
+			fallback = true
+			break
+		}
+		// if ready is at false, then iterate to the next MetaData and try to resolve other namespaces
+		if !ready {
+			continue
+		}
+		ns := strings.Split(metaKey, "-")[2] // MetaKey is like : "aerospike-monitoring-closeststore"
+		namespaces[ns] = struct{}{}
+	}
+
+	// DEPRECATED way to get namespaces in case of fallback required or empty namespaces with the new method
+	if fallback || len(namespaces) == 0 {
+		nsString, ok := entry.Meta[conf.AerospikeEndpointConfig.NamespaceMetaKey]
+		if ok {
+			// Clear namespaces for any previously found entry from the old method
+			for k := range namespaces {
+				delete(namespaces, k)
+			}
+			nsFromDiscovery := strings.Split(nsString, ";")
+			for _, ns := range nsFromDiscovery {
+				namespaces[ns] = struct{}{}
+			}
 		}
 	}
+
 	return namespaces
 }
 

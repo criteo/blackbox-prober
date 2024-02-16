@@ -43,6 +43,7 @@ type AerospikeEndpointConfig struct {
 	TLSHostnameMetaKey string `yaml:"tls_hostname_meta_key,omitempty"`
 	// Probe configuration
 	NamespaceMetaKey                  string        `yaml:"namespace_meta_key,omitempty"`
+	NamespaceMetaKeyPrefix            string        `yaml:"namespace_meta_key_prefix,omitempty"`
 	MonitoringSet                     string        `yaml:"monitoring_set,omitempty"`
 	LatencyKeyPrefix                  string        `yaml:"latency_key_prefix,omitempty"`
 	DurabilityKeyPrefix               string        `yaml:"durability_key_prefix,omitempty"`
@@ -63,6 +64,7 @@ var (
 		TLSTag:                            "tls",
 		TLSHostnameMetaKey:                "tls-hostname",
 		NamespaceMetaKey:                  "",
+		NamespaceMetaKeyPrefix:            "",
 		MonitoringSet:                     "monitoring",
 		LatencyKeyPrefix:                  "monitoring_latency_",
 		DurabilityKeyPrefix:               "monitoring_durability_",

@@ -96,8 +96,10 @@ func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry
 		if !ready {
 			continue
 		}
-		ns := strings.Split(metaKey, "-")[2] // MetaKey is like : "aerospike-monitoring-closeststore"
-		namespaces[ns] = struct{}{}
+		ns := metaKey[len(conf.AerospikeEndpointConfig.NamespaceMetaKeyPrefix):] // MetaKey is like : "aerospike-monitoring-closeststore"
+		if len(ns) > 0 {
+			namespaces[ns] = struct{}{}
+		}
 	}
 
 	// DEPRECATED way to get namespaces in case of fallback required or empty namespaces with the new method

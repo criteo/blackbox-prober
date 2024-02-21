@@ -64,7 +64,7 @@ var (
 		TLSTag:                            "tls",
 		TLSHostnameMetaKey:                "tls-hostname",
 		NamespaceMetaKey:                  "",
-		NamespaceMetaKeyPrefix:            "",
+		NamespaceMetaKeyPrefix:            "aerospike-monitoring-",
 		MonitoringSet:                     "monitoring",
 		LatencyKeyPrefix:                  "monitoring_latency_",
 		DurabilityKeyPrefix:               "monitoring_durability_",

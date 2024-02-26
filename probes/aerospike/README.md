@@ -14,17 +14,6 @@ For advertising "foo" and "bar" namespace
 `aerospike-monitoring-foo: true`
 `aerospike-monitoring-bar: true`
 
-If any of these MetaData entries are not present of does not define a bool value
-then it will fallback to the old method of namespace discovery:
-`namespace_meta_key` which contains namespaces separated by `;`
-
-Example:
-`namespace_meta_key` per default is set to `aerospike-namespaces`.
-
-For advertising "foo" and "bar" namespace
-
-`aerospike-namespaces: foo;bar`
-
 ## Latency checks executed at cluster level
 
 In the Aerospike probe, all latency checks are being run on cluster level. Normally

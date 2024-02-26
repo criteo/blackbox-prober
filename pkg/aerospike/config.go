@@ -63,7 +63,6 @@ var (
 		PasswordEnv:                       "AEROSPIKE_PASSWORD",
 		TLSTag:                            "tls",
 		TLSHostnameMetaKey:                "tls-hostname",
-		NamespaceMetaKey:                  "",
 		NamespaceMetaKeyPrefix:            "aerospike-monitoring-",
 		MonitoringSet:                     "monitoring",
 		LatencyKeyPrefix:                  "monitoring_latency_",

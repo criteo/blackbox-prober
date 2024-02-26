@@ -26,12 +26,7 @@ client_config:
   # Skip ssl verification
   tls_skip_verify: false 
   ### Probe discovery configuration ###
-  # The key to discover Aerospike's namespaces through service discovery
-  # Set it to "" to instead discover namespaces automatically via the info command
-  # DEPRECATED since 02/19/2024
-  namespace_meta_key: "aerospike-namespaces"
   # The key prefix to discover Aerospike's namespaces through service discovery
-  # old "namespace_meta_key" has been DEPRECATED because of 512 bytes limitation of the value in consul.
   namespace_meta_key_prefix: "aerospike-monitoring-"
   ### Probe configuration ###
   monitoring_set: monitoring

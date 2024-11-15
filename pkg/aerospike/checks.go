@@ -269,3 +269,15 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	durabilityCorruptedItems.WithLabelValues(e.Namespace, e.ClusterName, e.GetName()).Set(total_corrupted_items)
 	return nil
 }
+
+func Teardown(p topology.ProbeableEndpoint) error {
+	e, ok := p.(*AerospikeEndpoint)
+	if !ok {
+		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
+	}
+
+	// Do not rely on GC - we've already seen resource leaks happen
+	e.Client.Close()
+
+	return nil
+}

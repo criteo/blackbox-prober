@@ -78,7 +78,7 @@ func main() {
 			Name:       "latency_check",
 			PrepareFn:  scheduler.Noop,
 			CheckFn:    aerospike.LatencyCheck,
-			TeardownFn: scheduler.Noop,
+			TeardownFn: aerospike.Teardown,
 			Interval:   config.AerospikeChecksConfigs.LatencyCheckConfig.Interval,
 		})
 	}
@@ -87,7 +87,7 @@ func main() {
 			Name:       "durability_check",
 			PrepareFn:  aerospike.DurabilityPrepare,
 			CheckFn:    aerospike.DurabilityCheck,
-			TeardownFn: scheduler.Noop,
+			TeardownFn: aerospike.Teardown, // It is okay to call aerospike.Client.Close multiple times
 			Interval:   config.AerospikeChecksConfigs.DurabilityCheckConfig.Interval,
 		})
 	}

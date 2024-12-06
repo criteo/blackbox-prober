@@ -5,7 +5,6 @@ go 1.17
 require (
 	github.com/aerospike/aerospike-client-go v4.5.2+incompatible
 	github.com/aerospike/aerospike-client-go/v5 v5.9.0
-	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
 	github.com/go-kit/log v0.2.1
 	github.com/hashicorp/consul/api v1.13.0
 	github.com/pkg/errors v0.9.1

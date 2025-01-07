@@ -6,10 +6,10 @@ test:
 		go test ./...
 
 build:
-		go build -o build/aerospike_probe probes/aerospike/main.go
+		CGO_ENABLED=0 go build -o build/aerospike_probe probes/aerospike/main.go
 
 build_linux:
-		GOOS=linux GOARCH=amd64 go build -o build/aerospike_probe probes/aerospike/*.go
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/aerospike_probe probes/aerospike/*.go
 
 lint:
 		gofmt -d -e -s pkg/**/*.go probes/**/*.go

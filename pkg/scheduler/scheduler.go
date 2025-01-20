@@ -174,12 +174,14 @@ func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, 
 	// Make sure the endpoint is connectable
 	err := w.endpoint.Connect()
 	if err != nil {
+		w.endpoint.Close()
 		return errors.Wrapf(err, "Init failure during connection to endpoint %s", w.endpoint.GetHash())
 	}
 
 	// Make sure the probe is able to prepare the endpoint
 	err = w.PrepareProbing()
 	if err != nil {
+		w.endpoint.Close()
 		return errors.Wrapf(err, "Init failure during preparation of endpoint %s", w.endpoint.GetHash())
 	}
 

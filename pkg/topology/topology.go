@@ -20,32 +20,36 @@ type ProbeableEndpoint interface {
 // DummyEndpoint is a fake ProbeableEndpoint that don't do anything
 // Useful for testing
 type DummyEndpoint struct {
-	Name    string
-	Hash    string
-	Cluster bool
+	Name      string
+	Hash      string
+	Cluster   bool
+	Connected bool
+	Closed    bool
 }
 
-func (d DummyEndpoint) GetHash() string {
+func (d *DummyEndpoint) GetHash() string {
 	return d.Hash
 }
 
-func (d DummyEndpoint) GetName() string {
+func (d *DummyEndpoint) GetName() string {
 	return d.Name
 }
 
-func (d DummyEndpoint) IsCluster() bool {
+func (d *DummyEndpoint) IsCluster() bool {
 	return d.Cluster
 }
 
-func (d DummyEndpoint) Connect() error {
+func (d *DummyEndpoint) Connect() error {
+	d.Connected = true
 	return nil
 }
 
-func (d DummyEndpoint) Refresh() error {
+func (d *DummyEndpoint) Refresh() error {
 	return nil
 }
 
-func (d DummyEndpoint) Close() error {
+func (d *DummyEndpoint) Close() error {
+	d.Closed = true
 	return nil
 }
 

@@ -15,14 +15,14 @@ func TestDiffWorksWithEmptyMap(t *testing.T) {
 }
 
 func TestDiffWorksOnSingleCluster(t *testing.T) {
-	oldCluster := NewCluster(DummyEndpoint{Name: "old_cluster", Hash: "old_cluster1"})
-	oldCluster.AddEndpoint(DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint1"})
-	oldCluster.AddEndpoint(DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint2"})
-	oldCluster.AddEndpoint(DummyEndpoint{Name: "old_endpoint3", Hash: "old_endpoint3"})
+	oldCluster := NewCluster(&DummyEndpoint{Name: "old_cluster", Hash: "old_cluster1"})
+	oldCluster.AddEndpoint(&DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint1"})
+	oldCluster.AddEndpoint(&DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint2"})
+	oldCluster.AddEndpoint(&DummyEndpoint{Name: "old_endpoint3", Hash: "old_endpoint3"})
 
-	newCluster := NewCluster(DummyEndpoint{Name: "old_cluster", Hash: "old_cluster1"})
-	newCluster.AddEndpoint(DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint2"})
-	newCluster.AddEndpoint(DummyEndpoint{Name: "old_endpoint3", Hash: "old_endpoint4"})
+	newCluster := NewCluster(&DummyEndpoint{Name: "old_cluster", Hash: "old_cluster1"})
+	newCluster.AddEndpoint(&DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint2"})
+	newCluster.AddEndpoint(&DummyEndpoint{Name: "old_endpoint3", Hash: "old_endpoint4"})
 
 	oldMap := NewClusterMap()
 	oldMap.AppendCluster(oldCluster)
@@ -45,13 +45,13 @@ func TestDiffWorksOnSingleCluster(t *testing.T) {
 }
 
 func TestDiffWorksOnMultipleClusters(t *testing.T) {
-	oldCluster1 := NewCluster(DummyEndpoint{Name: "old_cluster", Hash: "old_cluster1"})
-	oldCluster1.AddEndpoint(DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint1"})
-	oldCluster2 := NewCluster(DummyEndpoint{Name: "old_cluster", Hash: "old_cluster2"})
-	oldCluster2.AddEndpoint(DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint2"})
+	oldCluster1 := NewCluster(&DummyEndpoint{Name: "old_cluster", Hash: "old_cluster1"})
+	oldCluster1.AddEndpoint(&DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint1"})
+	oldCluster2 := NewCluster(&DummyEndpoint{Name: "old_cluster", Hash: "old_cluster2"})
+	oldCluster2.AddEndpoint(&DummyEndpoint{Name: "old_endpoint", Hash: "old_endpoint2"})
 
-	newCluster2 := NewCluster(DummyEndpoint{Name: "new_cluster", Hash: "new_cluster1"})
-	newCluster2.AddEndpoint(DummyEndpoint{Name: "new_endpoint", Hash: "new_endpoint1"})
+	newCluster2 := NewCluster(&DummyEndpoint{Name: "new_cluster", Hash: "new_cluster1"})
+	newCluster2.AddEndpoint(&DummyEndpoint{Name: "new_endpoint", Hash: "new_endpoint1"})
 
 	oldMap := NewClusterMap()
 	oldMap.AppendCluster(oldCluster1)

@@ -14,6 +14,9 @@ type testEndpoint struct {
 	deadline         time.Time
 	CheckCallCount   int
 	RefreshCallCount int
+	// Used to track asynchronous changes
+	UpdatedChan   chan bool
+	FailOnConnect bool
 }
 
 func (te *testEndpoint) Refresh() error {
@@ -21,6 +24,14 @@ func (te *testEndpoint) Refresh() error {
 	if te.RefreshCallCount%2 == 0 {
 		return errors.New("fake err")
 	}
+	return nil
+}
+
+func (te *testEndpoint) Connect() error {
+	if te.FailOnConnect {
+		return errors.New("fake connect error")
+	}
+	te.Connected = true
 	return nil
 }
 
@@ -73,14 +84,114 @@ func TestWorkerWorks(t *testing.T) {
 	}
 }
 
-func TestWorkeStopIfNoChecks(t *testing.T) {
+func TestWorkerStopIfNoChecks(t *testing.T) {
 	controlChan := make(chan bool, 1)
 	w := ProberWorker{
 		logger:          log.NewNopLogger(),
-		endpoint:        topology.DummyEndpoint{},
+		endpoint:        &topology.DummyEndpoint{},
 		checks:          []Check{},
 		controlChan:     controlChan,
 		refreshInterval: 10 * time.Millisecond,
 	}
 	w.StartProbing()
+}
+
+// Helper function to track the execution of teardown on an endpoint
+func DummyTeardown(endpoint topology.ProbeableEndpoint) error {
+	e, _ := endpoint.(*testEndpoint)
+	e.UpdatedChan <- true
+	return nil
+}
+
+func DummyAlwaysFail(endpoint topology.ProbeableEndpoint) error {
+	return errors.New("dummy test failure")
+}
+
+func TestWorkerEndpointProperlyClosed(t *testing.T) {
+	topologyUpdateChan := make(chan topology.ClusterMap, 1)
+	// Use a chan to have a synchronization point as probe worker is async
+	updateChan := make(chan bool, 1)
+
+	ps := NewProbingScheduler(log.NewNopLogger(), topologyUpdateChan)
+	fakeCheck := Check{
+		Name:       "fakecheck",
+		PrepareFn:  Noop,
+		CheckFn:    Noop,
+		TeardownFn: DummyTeardown,
+		Interval:   time.Hour,
+	}
+	ps.RegisterNewClusterCheck(fakeCheck)
+	ps.RegisterNewNodeCheck(fakeCheck)
+
+	fakeEndoint := testEndpoint{UpdatedChan: updateChan}
+	fakeEndoint.Name = "foo1"
+	fakeEndoint.Cluster = true
+
+	clusterMap := topology.NewClusterMap()
+	clusterMap.AppendCluster(topology.NewCluster(&fakeEndoint))
+
+	// Create a new probe worker
+	topologyUpdateChan <- clusterMap
+	ps.ManageProbes()
+
+	// Should stop the new probe
+	clusterMap = topology.NewClusterMap()
+	topologyUpdateChan <- clusterMap
+	ps.ManageProbes()
+
+	// Wait for teardown to execute
+	<-updateChan
+
+	if fakeEndoint.Closed != true {
+		t.Fatalf("Endpoint not closed after being removed from topology")
+	}
+}
+
+func TestWorkerCloseEndpointOnStartFailure(t *testing.T) {
+	topologyUpdateChan := make(chan topology.ClusterMap, 1)
+
+	ps := NewProbingScheduler(log.NewNopLogger(), topologyUpdateChan)
+	fakeCheck := Check{
+		Name:       "fakecheck",
+		PrepareFn:  Noop,
+		CheckFn:    Noop,
+		TeardownFn: Noop,
+		Interval:   time.Hour,
+	}
+	ps.RegisterNewClusterCheck(fakeCheck)
+	ps.RegisterNewNodeCheck(fakeCheck)
+
+	fakeEndoint1 := testEndpoint{}
+	fakeEndoint1.Name = "foo1"
+	fakeEndoint1.Cluster = true
+	fakeEndoint1.FailOnConnect = true
+
+	clusterMap := topology.NewClusterMap()
+	clusterMap.AppendCluster(topology.NewCluster(&fakeEndoint1))
+
+	// Test failure on connect
+	topologyUpdateChan <- clusterMap
+	ps.ManageProbes()
+
+	if fakeEndoint1.Closed != true {
+		t.Fatalf("Endpoint not closed after being removed from topology")
+	}
+
+	// Test failure on prepare fn
+	fakeEndoint2 := testEndpoint{}
+	fakeEndoint2.Name = "foo2"
+	fakeEndoint2.Cluster = true
+	fakeEndoint2.FailOnConnect = false
+
+	clusterMap = topology.NewClusterMap()
+	clusterMap.AppendCluster(topology.NewCluster(&fakeEndoint2))
+	topologyUpdateChan <- clusterMap
+
+	fakeCheck.PrepareFn = DummyAlwaysFail
+	ps.RegisterNewClusterCheck(fakeCheck)
+	ps.ManageProbes()
+
+	if fakeEndoint2.Connected != true && fakeEndoint2.Closed != true {
+		t.Fatalf("Endpoint not closed after being removed from topology")
+	}
 }

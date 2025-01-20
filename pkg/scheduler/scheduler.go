@@ -114,30 +114,26 @@ func (ps *ProbingScheduler) ManageProbes() {
 
 	any_failed_update := false
 	for _, endpoint := range toAddEndpoints {
+		var checks []Check
+		var endpoint_type string
 		if endpoint.IsCluster() {
-			if len(ps.clusterChecks) > 0 {
-				err := ps.startNewWorker(endpoint, ps.clusterChecks)
-				if err != nil {
-					level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
-					SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
-					any_failed_update = true
-					continue
-				}
-			} else {
-				level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no cluster checks defined", endpoint.GetName()))
+			checks = ps.clusterChecks
+			endpoint_type = "cluster"
+		} else {
+			checks = ps.nodeChecks
+			endpoint_type = "node"
+		}
+
+		if len(checks) > 0 {
+			err := ps.startNewWorker(endpoint, checks)
+			if err != nil {
+				level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
+				SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
+				any_failed_update = true
+				continue
 			}
 		} else {
-			if len(ps.nodeChecks) > 0 {
-				err := ps.startNewWorker(endpoint, ps.nodeChecks)
-				if err != nil {
-					level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
-					SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
-					any_failed_update = true
-					continue
-				}
-			} else {
-				level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no node checks defined", endpoint.GetName()))
-			}
+			level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no %s checks defined", endpoint.GetName(), endpoint_type))
 		}
 	}
 	// Only update the topology if all probes successfully started

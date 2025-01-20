@@ -96,6 +96,91 @@ func TestWorkerStopIfNoChecks(t *testing.T) {
 	w.StartProbing()
 }
 
+// Checks are different between cluster endpoints and node endpoints
+// Test if the proper checks are executed for each types
+
+func TestNodeChecksCalledOnlyOnNodeEndpoints(t *testing.T) {
+	topologyUpdateChan := make(chan topology.ClusterMap, 1)
+
+	ps := NewProbingScheduler(log.NewNopLogger(), topologyUpdateChan)
+	nodeCheckCalled := false
+	fakeNodeCheck := Check{
+		Name:       "fakenodecheck",
+		PrepareFn:  func(topology.ProbeableEndpoint) error { *(&nodeCheckCalled) = true; return nil },
+		CheckFn:    Noop,
+		TeardownFn: Noop,
+		Interval:   time.Hour,
+	}
+
+	clusterCheckCalled := false
+	fakeClusterCheck := Check{
+		Name:       "fakeclustercheck",
+		PrepareFn:  func(topology.ProbeableEndpoint) error { *(&clusterCheckCalled) = true; return nil },
+		CheckFn:    Noop,
+		TeardownFn: Noop,
+		Interval:   time.Hour,
+	}
+
+	ps.RegisterNewClusterCheck(fakeClusterCheck)
+	ps.RegisterNewNodeCheck(fakeNodeCheck)
+
+	fakeEndoint := testEndpoint{}
+	fakeEndoint.Name = "foo1"
+	// Endpoint is node
+	fakeEndoint.Cluster = false
+
+	clusterMap := topology.NewClusterMap()
+	clusterMap.AppendCluster(topology.NewCluster(&fakeEndoint))
+
+	topologyUpdateChan <- clusterMap
+	ps.ManageProbes()
+
+	if nodeCheckCalled != true && clusterCheckCalled != false {
+		t.Fatalf("Checks for a node not properly called ")
+	}
+}
+
+func TestClusterChecksCalledOnlyOnClusterEndpoints(t *testing.T) {
+	topologyUpdateChan := make(chan topology.ClusterMap, 1)
+
+	ps := NewProbingScheduler(log.NewNopLogger(), topologyUpdateChan)
+	nodeCheckCalled := false
+	fakeNodeCheck := Check{
+		Name:       "fakenodecheck",
+		PrepareFn:  func(topology.ProbeableEndpoint) error { *(&nodeCheckCalled) = true; return nil },
+		CheckFn:    Noop,
+		TeardownFn: Noop,
+		Interval:   time.Hour,
+	}
+
+	clusterCheckCalled := false
+	fakeClusterCheck := Check{
+		Name:       "fakeclustercheck",
+		PrepareFn:  func(topology.ProbeableEndpoint) error { *(&clusterCheckCalled) = true; return nil },
+		CheckFn:    Noop,
+		TeardownFn: Noop,
+		Interval:   time.Hour,
+	}
+
+	ps.RegisterNewClusterCheck(fakeClusterCheck)
+	ps.RegisterNewNodeCheck(fakeNodeCheck)
+
+	fakeEndoint := testEndpoint{}
+	fakeEndoint.Name = "foo1"
+	// Endpoint is cluster
+	fakeEndoint.Cluster = true
+
+	clusterMap := topology.NewClusterMap()
+	clusterMap.AppendCluster(topology.NewCluster(&fakeEndoint))
+
+	topologyUpdateChan <- clusterMap
+	ps.ManageProbes()
+
+	if nodeCheckCalled != false && clusterCheckCalled != true {
+		t.Fatalf("Checks for a cluster not properly called ")
+	}
+}
+
 // Helper function to track the execution of teardown on an endpoint
 func DummyTeardown(endpoint topology.ProbeableEndpoint) error {
 	e, _ := endpoint.(*testEndpoint)

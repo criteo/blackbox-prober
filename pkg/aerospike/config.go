@@ -52,6 +52,7 @@ type AerospikeEndpointConfig struct {
 	OpeningConnectionThreshold        int           `yaml:"opening_connection_threshold,omitempty"`
 	MinConnectionsPerNode             int           `yaml:"min_connections_per_node,omitempty"`
 	TendInterval                      time.Duration `yaml:"tend_interval,omitempty"`
+	TotalTimeout                      time.Duration `yaml:"total_timeout,omitempty"`
 	ExitFastOnExhaustedConnectionPool bool          `yaml:"exit_fast_on_exhausted_connection_pool,omitempty"`
 }
 
@@ -72,6 +73,7 @@ var (
 		OpeningConnectionThreshold:        0,
 		MinConnectionsPerNode:             0,
 		TendInterval:                      time.Second,
+		TotalTimeout:                      30 * time.Second,
 		ExitFastOnExhaustedConnectionPool: false,
 	}
 )

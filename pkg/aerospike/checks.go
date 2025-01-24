@@ -90,9 +90,10 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 	keyPrefix := e.Config.genericConfig.LatencyKeyPrefix
 
-	policy := as.NewWritePolicy(0, 3600) // Expire after one hour if the delete didn't work
-	policy.MaxRetries = 0                // Ensure we never retry
-	policy.ReplicaPolicy = as.MASTER     // Read are always done on master
+	policy := as.NewWritePolicy(0, 3600)                      // Expire after one hour if the delete didn't work
+	policy.MaxRetries = 0                                     // Ensure we never retry (0 is default Client value in v7)
+	policy.ReplicaPolicy = as.MASTER                          // Read are always done on master (SEQUENCE is default Client value in v7)
+	policy.TotalTimeout = e.Config.genericConfig.TotalTimeout // 0 is default Client value in v7
 	// Do not wait until timeout if connections cannot be open
 	policy.ExitFastOnExhaustedConnectionPool = e.Config.genericConfig.ExitFastOnExhaustedConnectionPool
 
@@ -175,7 +176,9 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
 
-	policy := as.NewWritePolicy(0, 0) // No expiration
+	policy := as.NewWritePolicy(0, 0)                         // No expiration
+	policy.MaxRetries = 2                                     // We can retry for durability (0 is default Client value in v7)
+	policy.TotalTimeout = e.Config.genericConfig.TotalTimeout // 0 is default Client value in v7
 	keyRange := e.Config.genericConfig.DurabilityKeyTotal
 	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
 	// allPushedFlag indicate if a probe have pushed all data once
@@ -237,6 +240,9 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	}
 
 	policy := as.NewPolicy()
+	policy.MaxRetries = 2                                     // 2 is default Client value in v7
+	policy.ReplicaPolicy = as.MASTER                          // Read are always done on master (SEQUENCE is default Client value in v7)
+	policy.TotalTimeout = e.Config.genericConfig.TotalTimeout // 0 is default Client value in v7
 	keyRange := e.Config.genericConfig.DurabilityKeyTotal
 	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
 

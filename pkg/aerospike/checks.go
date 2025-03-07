@@ -176,7 +176,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
 
-	policy := as.NewWritePolicy(0, 0)                         // No expiration
+	policy := as.NewWritePolicy(0, as.TTLDontExpire)          // No expiration
 	policy.MaxRetries = 2                                     // We can retry for durability (0 is default Client value in v7)
 	policy.TotalTimeout = e.Config.genericConfig.TotalTimeout // 0 is default Client value in v7
 	keyRange := e.Config.genericConfig.DurabilityKeyTotal

@@ -125,7 +125,7 @@ func (ps *ProbingScheduler) ManageProbes() {
 		}
 
 		if len(checks) > 0 {
-			err := ps.startNewWorker(endpoint, checks)
+			err, _ := ps.startNewWorker(endpoint, checks)
 			if err != nil {
 				level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
 				SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
@@ -154,11 +154,12 @@ func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEnd
 	delete(ps.workerControlChans, endpoint.GetHash())
 }
 
-func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) error {
+func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, checks []Check) (error, bool) {
 	// If the worker is already started, do not start it again (avoid leaking or flapping)
 	_, ok := ps.workerControlChans[endpoint.GetHash()]
 	if ok {
 		level.Info(ps.logger).Log("msg", fmt.Sprintf("Probe already started for %s", endpoint.GetName()))
+		return nil, false
 	}
 
 	wc := make(chan bool, 1)
@@ -174,19 +175,19 @@ func (ps *ProbingScheduler) startNewWorker(endpoint topology.ProbeableEndpoint, 
 	err := w.endpoint.Connect()
 	if err != nil {
 		w.endpoint.Close()
-		return errors.Wrapf(err, "Init failure during connection to endpoint %s", w.endpoint.GetHash())
+		return errors.Wrapf(err, "Init failure during connection to endpoint %s", w.endpoint.GetHash()), false
 	}
 
 	// Make sure the probe is able to prepare the endpoint
 	err = w.PrepareProbing()
 	if err != nil {
 		w.endpoint.Close()
-		return errors.Wrapf(err, "Init failure during preparation of endpoint %s", w.endpoint.GetHash())
+		return errors.Wrapf(err, "Init failure during preparation of endpoint %s", w.endpoint.GetHash()), false
 	}
 
 	ps.workerControlChans[endpoint.GetHash()] = wc
 	go w.StartProbing()
-	return nil
+	return nil, true
 }
 
 type ProberWorker struct {

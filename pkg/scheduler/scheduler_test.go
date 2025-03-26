@@ -280,3 +280,47 @@ func TestWorkerCloseEndpointOnStartFailure(t *testing.T) {
 		t.Fatalf("Endpoint not closed after being removed from topology")
 	}
 }
+
+func TestStartNewWorkerEarlyReturns(t *testing.T) {
+	topologyUpdateChan := make(chan topology.ClusterMap, 1)
+
+	ps := NewProbingScheduler(log.NewNopLogger(), topologyUpdateChan)
+	fakeCheck := Check{
+		Name:       "fakecheck",
+		PrepareFn:  Noop,
+		CheckFn:    Noop,
+		TeardownFn: Noop,
+		Interval:   time.Hour,
+	}
+	ps.RegisterNewClusterCheck(fakeCheck)
+
+	// Create a test endpoint
+	fakeEndpoint := testEndpoint{}
+	fakeEndpoint.Name = "foo1"
+	fakeEndpoint.Cluster = true
+
+	// First call to startNewWorker should succeed
+	err, ok := ps.startNewWorker(&fakeEndpoint, ps.clusterChecks)
+	if err != nil {
+		t.Fatalf("First call to startNewWorker failed: %v", err)
+	}
+
+	// Number of workers should be 1
+	if len(ps.workerControlChans) != 1 {
+		t.Fatalf("Expected 1 worker, got %d", len(ps.workerControlChans))
+	}
+
+	// Second call to startNewWorker with the same endpoint should early return
+	err, ok = ps.startNewWorker(&fakeEndpoint, ps.clusterChecks)
+	if err != nil {
+		t.Fatalf("Second call to startNewWorker failed: %v", err)
+	}
+	if ok {
+		t.Fatalf("Second call to startNewWorker should have early returned but didn't")
+	}
+
+	// Number of workers should still be 1 and with the same channel
+	if len(ps.workerControlChans) != 1 {
+		t.Fatalf("Expected 1 worker after second call, got %d", len(ps.workerControlChans))
+	}
+}

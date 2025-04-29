@@ -3,7 +3,7 @@ module github.com/criteo/blackbox-prober
 go 1.22
 
 require (
-	github.com/aerospike/aerospike-client-go/v7 v7.8.0
+	github.com/aerospike/aerospike-client-go/v7 v7.6.1
 	github.com/go-kit/log v0.2.1
 	github.com/hashicorp/consul/api v1.13.0
 	github.com/pkg/errors v0.9.1

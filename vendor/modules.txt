@@ -1,11 +1,9 @@
-# github.com/aerospike/aerospike-client-go/v7 v7.8.0
+# github.com/aerospike/aerospike-client-go/v7 v7.6.1
 ## explicit; go 1.20
 github.com/aerospike/aerospike-client-go/v7
 github.com/aerospike/aerospike-client-go/v7/internal/atomic
-github.com/aerospike/aerospike-client-go/v7/internal/atomic/map
 github.com/aerospike/aerospike-client-go/v7/internal/lua
 github.com/aerospike/aerospike-client-go/v7/internal/lua/resources
-github.com/aerospike/aerospike-client-go/v7/internal/seq
 github.com/aerospike/aerospike-client-go/v7/logger
 github.com/aerospike/aerospike-client-go/v7/pkg/bcrypt
 github.com/aerospike/aerospike-client-go/v7/pkg/ripemd160

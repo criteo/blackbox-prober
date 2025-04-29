@@ -78,14 +78,14 @@ func (bw *BatchWrite) size(parentPolicy *BasePolicy) (int, Error) {
 			}
 		}
 
-		if (bw.Policy.SendKey || parentPolicy.SendKey) && bw.Key.hasValueToSend() {
+		if bw.Policy.SendKey || parentPolicy.SendKey {
 			if sz, err := bw.Key.userKey.EstimateSize(); err != nil {
 				return -1, err
 			} else {
 				size += sz + int(_FIELD_HEADER_SIZE) + 1
 			}
 		}
-	} else if parentPolicy.SendKey && bw.Key.hasValueToSend() {
+	} else if parentPolicy.SendKey {
 		sz, err := bw.Key.userKey.EstimateSize()
 		if err != nil {
 			return -1, err

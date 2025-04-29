@@ -96,14 +96,14 @@ func (bu *BatchUDF) size(parentPolicy *BasePolicy) (int, Error) {
 			size += sz + int(_FIELD_HEADER_SIZE)
 		}
 
-		if (bu.Policy.SendKey || parentPolicy.SendKey) && bu.Key.hasValueToSend() {
+		if bu.Policy.SendKey || parentPolicy.SendKey {
 			if sz, err := bu.Key.userKey.EstimateSize(); err != nil {
 				return -1, err
 			} else {
 				size += sz + int(_FIELD_HEADER_SIZE) + 1
 			}
 		}
-	} else if parentPolicy.SendKey && bu.Key.hasValueToSend() {
+	} else if parentPolicy.SendKey {
 		sz, err := bu.Key.userKey.EstimateSize()
 		if err != nil {
 			return -1, err

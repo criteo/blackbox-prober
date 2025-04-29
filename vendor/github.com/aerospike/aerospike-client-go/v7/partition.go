@@ -249,25 +249,21 @@ func (ptn *Partition) getSequenceNode(cluster *Cluster) (*Node, Error) {
 func (ptn *Partition) getRackNode(cluster *Cluster) (*Node, Error) {
 	replicas := ptn.partitions.Replicas
 
-	// Try to find a node on the same rack first:
 	for _, rackId := range cluster.clientPolicy.RackIds {
 		seq := ptn.sequence
 		for range replicas {
-			index := seq % len(replicas)
+			index := ptn.sequence % len(replicas)
 			node := replicas[index][ptn.PartitionId]
 
 			if node != nil && node != ptn.prevNode && node.hasRack(ptn.Namespace, rackId) && node.IsActive() {
 				ptn.prevNode = node
-				ptn.sequence = seq + 1 // start from the next node and save a comparison
+				ptn.sequence = seq
 				return node, nil
 			}
 			seq++
 		}
 	}
 
-	// A node on the same Rack was not found, so try other options.
-	// Same node as the previous will be the last option,
-	// since it is the least desirable.
 	for range replicas {
 		index := ptn.sequence % len(replicas)
 		node := replicas[index][ptn.PartitionId]

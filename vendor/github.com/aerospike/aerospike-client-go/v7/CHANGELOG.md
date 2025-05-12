@@ -1,5 +1,66 @@
 # Change History
 
+## May 5 2025: v7.10.1
+
+- **Fixes**
+  - [CLIENT-3438] Adding `err` to return in `Node.requestRawInfo`.
+
+## April 29 2025: v7.10.0
+
+- **Fixes**
+  - [CLIENT-3379] Setting TotalTimeout to 0 causes Scan / Query to fail (timeout)
+
+## February 26 2025: v7.9.0
+
+- **New Features**
+  - [CLIENT-3334] Support old PHP7 client encoded boolean and null values.
+
+- **Fixes**
+  - [CLIENT-3348] Parsing error during node rack update.
+
+## December 19 2024: v7.8.0
+
+  Minor fix release.
+
+- **Fixes**
+  - [CLIENT-3217] Do not send `nil` or `NullValue` as key to the server.
+
+## November 29 2024: v7.7.3
+
+  Minor fix release.
+
+- **Fixes**
+  - [CLIENT-3196] Parse nil keys properly in scan/query operations.
+
+## November 1 2024: v7.7.2
+
+  Minor fix release.
+
+- **Fixes**
+  - [CLIENT-3156] Fix an issue where rack policy always returns the master node. Resolves #455
+
+## September 18 2024: v7.7.1
+
+  Hot Fix release. This version fixes a major bug introduced in v7.7.0. You should use this release instead.
+
+- **Fixes**
+  - [CLIENT-3122] Fix `nil` dereference in the tend logic.
+
+## September 13 2024: v7.7.0
+
+  Minor improvement release.
+
+- **Improvements**
+  - [CLIENT-3112] Correctly handle new error messages/error codes returned by AS 7.2.
+  - [CLIENT-3102] Add "XDR key busy" error code 32.
+  - [CLIENT-3119] Use Generics For a General Code Clean Up
+    Uses several new generic containers to simplify concurrent access in the client.
+    Uses a Guard as a monitor for the tend connection. This encapsulates synchronized tend connection management using said Guard.
+  - Add documentation about client.WarmUp to the client initialization API.
+
+- **Fixes**
+  - [CLIENT-3082] BatchGet with empty Keys raises gRPC EOF error.
+
 ## August 12 2024: v7.6.1
 
   Minor improvement release.
@@ -36,7 +97,7 @@
 - **Improvements**
   - [CLIENT-2997] Scans should work in a mixed cluster of v5.7 and v6.4 server nodes.
   - [CLIENT-3020] Change `ReadModeSC` doc from server to client perspective.
-  
+
 - **Fixes**
   - [CLIENT-3019] Prevent Goroutine leak in `AuthInterceptor` for the Proxy Client.
 

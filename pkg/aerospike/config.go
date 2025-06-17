@@ -91,7 +91,7 @@ func (c *AerospikeEndpointConfig) UnmarshalYAML(unmarshal func(interface{}) erro
 
 func AddFlags(a *kingpin.Application, cfg *AerospikeProbeCommandLine) {
 	a.HelpFlag.Short('h')
-	a.Flag("aeropsike.log.level", "Only log messages with the given severity or above. One of: [debug, info, warn, error, off]").
+	a.Flag("aerospike.log.level", "Only log messages with the given severity or above. One of: [debug, info, warn, error, off]").
 		Default("off").StringVar(&cfg.AerospikeLogLevel)
 }
 
@@ -113,7 +113,7 @@ func GetLevel(s string) (asl.LogPriority, error) {
 }
 
 type AerospikeProbeCommandLine struct {
-	AerospikeLogLevel string `yaml:"aeropsike_log_level,omitempty"`
+	AerospikeLogLevel string `yaml:"aerospike_log_level,omitempty"`
 }
 
 type AerospikeProbeConfig struct {

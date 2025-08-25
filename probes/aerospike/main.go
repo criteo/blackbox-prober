@@ -15,10 +15,10 @@ import (
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
 
 	asl "github.com/aerospike/aerospike-client-go/v7/logger"
+	"github.com/alecthomas/kingpin/v2"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/promlog"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 // TODO: add timeouts

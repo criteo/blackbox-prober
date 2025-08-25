@@ -3,7 +3,6 @@ package aerospike
 import (
 	"crypto/tls"
 	"fmt"
-	"regexp"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -11,10 +10,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	as "github.com/aerospike/aerospike-client-go/v7"
-)
-
-var (
-	setExtractionRegex, _ = regexp.Compile("ns=([a-zA-Z0-9]+):")
 )
 
 var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{

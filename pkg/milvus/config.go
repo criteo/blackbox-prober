@@ -10,6 +10,7 @@ import (
 
 // Config used to configure the client of Milvus
 type MilvusClientConfig struct {
+	AuthEnabled    bool                     // Enable auth with user/pass for connection
 	Address        string                   // Remote address, "localhost:19530".
 	Username       string                   // Username for auth.
 	Password       string                   // Password for auth.
@@ -21,6 +22,7 @@ type MilvusClientConfig struct {
 
 // Config used to configure the endpoint of Milvus
 type MilvusEndpointConfig struct {
+	AuthEnabled bool `yaml:"auth_enabled,omitempty"`
 	// ENV related config
 	// Env variable name to use to load credentials for Milvus
 	UsernameEnv string `yaml:"username_env,omitempty"`

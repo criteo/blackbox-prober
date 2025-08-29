@@ -26,19 +26,22 @@ func (conf *MilvusProbeConfig) buildAddress(tlsEnabled bool, addressUrl string) 
 }
 
 func (conf *MilvusProbeConfig) generateDatabaseEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry) ([]*MilvusEndpoint, error) {
+	authEnabled := conf.MilvusEndpointConfig.AuthEnabled
 	var (
 		username string
 		password string
 		ok       bool
 	)
 
-	username, ok = os.LookupEnv(conf.MilvusEndpointConfig.UsernameEnv)
-	if !ok {
-		return nil, fmt.Errorf("error: username not found in env (%s)", conf.MilvusEndpointConfig.UsernameEnv)
-	}
-	password, ok = os.LookupEnv(conf.MilvusEndpointConfig.PasswordEnv)
-	if !ok {
-		return nil, fmt.Errorf("error: password not found in env (%s)", conf.MilvusEndpointConfig.PasswordEnv)
+	if authEnabled {
+		username, ok = os.LookupEnv(conf.MilvusEndpointConfig.UsernameEnv)
+		if !ok {
+			return nil, fmt.Errorf("error: username not found in env (%s)", conf.MilvusEndpointConfig.UsernameEnv)
+		}
+		password, ok = os.LookupEnv(conf.MilvusEndpointConfig.PasswordEnv)
+		if !ok {
+			return nil, fmt.Errorf("error: password not found in env (%s)", conf.MilvusEndpointConfig.PasswordEnv)
+		}
 	}
 
 	var endpoints []*MilvusEndpoint
@@ -69,9 +72,10 @@ func (conf *MilvusProbeConfig) generateDatabaseEndpointsFromEntry(logger log.Log
 			ClusterLevel: true,
 			Config: MilvusClientConfig{
 				// auth
-				Username: username,
-				Password: password,
-				DBName:   database,
+				AuthEnabled: authEnabled,
+				Username:    username,
+				Password:    password,
+				DBName:      database,
 				// tls
 				EnableTLSAuth: tlsEnabled,
 				Address:       address,
@@ -105,9 +109,9 @@ func (conf MilvusProbeConfig) getDatabasesFromEntry(logger log.Logger, entry dis
 			continue
 		}
 		// MetaKey is like : "milvus-monitoring-foo"
-		ns := metaKey[len(conf.MilvusEndpointConfig.DatabaseMetaKeyPrefix):]
-		if len(ns) > 0 {
-			databases[ns] = struct{}{}
+		db := metaKey[len(conf.MilvusEndpointConfig.DatabaseMetaKeyPrefix):]
+		if len(db) > 0 {
+			databases[db] = struct{}{}
 		}
 	}
 

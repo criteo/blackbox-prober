@@ -32,15 +32,17 @@ func (e *MilvusEndpoint) IsCluster() bool {
 }
 
 func (e *MilvusEndpoint) Connect() error {
-	client, err := mv.New(context.Background(), &mv.ClientConfig{
+	clientConfig := &mv.ClientConfig{
 		Address:        e.Config.Address,
-		Username:       e.Config.Username,
-		Password:       e.Config.Password,
 		DBName:         e.Config.DBName,
 		EnableTLSAuth:  e.Config.EnableTLSAuth,
 		APIKey:         e.Config.APIKey,
 		RetryRateLimit: e.Config.RetryRateLimit,
-	})
+		Username:       e.Config.Username,
+		Password:       e.Config.Password,
+	}
+
+	client, err := mv.New(context.Background(), clientConfig)
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,8 @@ type MilvusEndpoint struct {
 	Config       MilvusClientConfig
 	Logger       log.Logger
 	Database     string
+	// MonitoringDatabase is the database the probe manages (defaults to "monitoring")
+	MonitoringDatabase string
 }
 
 func (e *MilvusEndpoint) GetHash() string {

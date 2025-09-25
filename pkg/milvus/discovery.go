@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/topology"
@@ -25,7 +23,7 @@ func (conf *MilvusProbeConfig) buildAddress(tlsEnabled bool, addressUrl string) 
 	return fmt.Sprintf("%s://%s", proto, addressUrl)
 }
 
-func (conf *MilvusProbeConfig) generateDatabaseEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry) ([]*MilvusEndpoint, error) {
+func (conf *MilvusProbeConfig) generateClusterEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry) ([]*MilvusEndpoint, error) {
 	authEnabled := conf.MilvusEndpointConfig.AuthEnabled
 	var (
 		username string
@@ -43,79 +41,45 @@ func (conf *MilvusProbeConfig) generateDatabaseEndpointsFromEntry(logger log.Log
 			return nil, fmt.Errorf("error: password not found in env (%s)", conf.MilvusEndpointConfig.PasswordEnv)
 		}
 	}
-
-	var endpoints []*MilvusEndpoint
-
 	tlsEnabled := utils.Contains(entry.Tags, conf.MilvusEndpointConfig.TLSTag)
 	addressUrl, ok := entry.Meta[conf.MilvusEndpointConfig.AddressMetaKey]
 	if !ok {
 		msg := fmt.Sprintf("%s not found in consul meta key for service %s", conf.MilvusEndpointConfig.AddressMetaKey, entry.Service)
 		level.Warn(logger).Log("msg", msg)
-		return endpoints, errors.New(msg)
+		return nil, errors.New(msg)
 	}
 
 	clusterName, ok := entry.Meta[conf.DiscoveryConfig.MetaClusterKey]
 	if !ok {
 		msg := fmt.Sprintf("ClusterName meta key not found. Ignoring service %s.", entry.Service)
 		level.Error(logger).Log("msg", msg)
-		return endpoints, errors.New(msg)
+		return nil, errors.New(msg)
 	}
-
-	databases := conf.getDatabasesFromEntry(logger, entry)
 	address := conf.buildAddress(tlsEnabled, addressUrl)
 
-	// TODO d.amsallem 08/25/2025: It may be worth to have only 1 MilvusEndpoint per cluster instead of one per db
-	for database := range databases {
-		e := &MilvusEndpoint{Name: clusterName,
-			ClusterName:  clusterName,
-			Database:     database,
-			ClusterLevel: true,
-			Config: MilvusClientConfig{
-				// auth
-				AuthEnabled: authEnabled,
-				Username:    username,
-				Password:    password,
-				DBName:      database,
-				// tls
-				EnableTLSAuth: tlsEnabled,
-				Address:       address,
-				// conf
-				RetryRateLimit: &milvusclient.RetryRateLimitOption{
-					MaxRetry:   conf.MilvusEndpointConfig.MaxRetry,
-					MaxBackoff: conf.MilvusEndpointConfig.MaxBackoff,
-				},
+	endpoint := &MilvusEndpoint{Name: clusterName,
+		ClusterName:        clusterName,
+		Database:           conf.MilvusEndpointConfig.MonitoringSet,
+		MonitoringDatabase: conf.MilvusEndpointConfig.MonitoringSet,
+		ClusterLevel:       true,
+		Config: MilvusClientConfig{
+			// auth
+			AuthEnabled: authEnabled,
+			Username:    username,
+			Password:    password,
+			// tls
+			EnableTLSAuth: tlsEnabled,
+			Address:       address,
+			// conf
+			RetryRateLimit: &milvusclient.RetryRateLimitOption{
+				MaxRetry:   conf.MilvusEndpointConfig.MaxRetry,
+				MaxBackoff: conf.MilvusEndpointConfig.MaxBackoff,
 			},
-			Logger: log.With(logger, "endpoint_name", entry.Address),
-		}
-		endpoints = append(endpoints, e)
+		},
+		Logger: log.With(logger, "endpoint_name", entry.Address),
 	}
 
-	return endpoints, nil
-}
-
-func (conf MilvusProbeConfig) getDatabasesFromEntry(logger log.Logger, entry discovery.ServiceEntry) map[string]struct{} {
-	databases := make(map[string]struct{})
-
-	for metaKey, metaValue := range entry.Meta {
-		if !strings.HasPrefix(metaKey, conf.MilvusEndpointConfig.DatabaseMetaKeyPrefix) {
-			continue
-		}
-		ready, err := strconv.ParseBool(metaValue)
-		if err != nil {
-			level.Error(logger).Log("msg", fmt.Sprintf("Fail to parse boolean value from MetaData %s. Fallbacking to deprecated method.", metaKey), "err", err)
-			continue
-		}
-		if !ready {
-			continue
-		}
-		// MetaKey is like : "milvus-monitoring-foo"
-		db := metaKey[len(conf.MilvusEndpointConfig.DatabaseMetaKeyPrefix):]
-		if len(db) > 0 {
-			databases[db] = struct{}{}
-		}
-	}
-
-	return databases
+	return []*MilvusEndpoint{endpoint}, nil
 }
 
 func (conf MilvusProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
@@ -123,7 +87,7 @@ func (conf MilvusProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []dis
 		clusterMap := topology.NewClusterMap()
 		clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
 		for _, entries := range clusterEntries {
-			endpoints, err := conf.generateDatabaseEndpointsFromEntry(logger, entries[0])
+			endpoints, err := conf.generateClusterEndpointsFromEntry(logger, entries[0])
 			if err != nil {
 				return clusterMap, err
 			}

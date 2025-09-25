@@ -8,7 +8,7 @@ discovery:
     allow_stale: true
     refresh_interval: 30s
     tags:
-    - milvus
+    - milvus-proxy
 client_config:
   ### AUTH ### 
   # Env variable to use to retrieve the credentials

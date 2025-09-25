@@ -33,14 +33,15 @@ type MilvusEndpointConfig struct {
 	// Metadata key to get the Hostname to use for TLS auth (only used if tlsTag is set)
 	AddressMetaKey string `yaml:"address_meta_key,omitempty"`
 	// Probe configuration
-	DatabaseMetaKey       string        `yaml:"database_meta_key,omitempty"`
-	DatabaseMetaKeyPrefix string        `yaml:"database_meta_key_prefix,omitempty"`
-	MonitoringSet         string        `yaml:"monitoring_set,omitempty"`
-	LatencyKeyPrefix      string        `yaml:"latency_key_prefix,omitempty"`
-	DurabilityKeyPrefix   string        `yaml:"durability_key_prefix,omitempty"`
-	DurabilityKeyTotal    int           `yaml:"durability_key_total,omitempty"`
-	MaxRetry              uint          `yaml:"max_retry,omitempty"`
-	MaxBackoff            time.Duration `yaml:"max_backoff,omitempty"`
+	DatabaseMetaKey       string `yaml:"database_meta_key,omitempty"`
+	DatabaseMetaKeyPrefix string `yaml:"database_meta_key_prefix,omitempty"`
+	// MonitoringSet is the database name managed by the probe (defaults to "monitoring")
+	MonitoringSet       string        `yaml:"monitoring_set,omitempty"`
+	LatencyKeyPrefix    string        `yaml:"latency_key_prefix,omitempty"`
+	DurabilityKeyPrefix string        `yaml:"durability_key_prefix,omitempty"`
+	DurabilityKeyTotal  int           `yaml:"durability_key_total,omitempty"`
+	MaxRetry            uint          `yaml:"max_retry,omitempty"`
+	MaxBackoff          time.Duration `yaml:"max_backoff,omitempty"`
 }
 
 var (

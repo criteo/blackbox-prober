@@ -79,11 +79,13 @@ const (
 
 	// InvalidNodeID indicates that node is not valid in querycoord replica or shard cluster.
 	InvalidNodeID = int64(-1)
+
+	SystemFieldsNum = int64(2)
 )
 
 const (
 	MinimalScalarIndexEngineVersion = int32(0)
-	CurrentScalarIndexEngineVersion = int32(1)
+	CurrentScalarIndexEngineVersion = int32(2)
 )
 
 // Endian is type alias of binary.LittleEndian.
@@ -133,7 +135,7 @@ const (
 	CollectionKey   = "collection"
 	RecallEvalKey   = "recall_eval"
 
-	IndexParamsKey = "params"
+	ParamsKey      = "params"
 	IndexTypeKey   = "index_type"
 	MetricTypeKey  = "metric_type"
 	DimKey         = "dim"
@@ -149,8 +151,9 @@ const (
 	ConsistencyLevel          = "consistency_level"
 	HintsKey                  = "hints"
 
-	JSONCastTypeKey = "json_cast_type"
-	JSONPathKey     = "json_path"
+	JSONCastTypeKey     = "json_cast_type"
+	JSONPathKey         = "json_path"
+	JSONCastFunctionKey = "json_cast_function"
 )
 
 // Doc-in-doc-out
@@ -164,6 +167,7 @@ const (
 const (
 	CollectionTTLConfigKey      = "collection.ttl.seconds"
 	CollectionAutoCompactionKey = "collection.autocompaction.enabled"
+	CollectionDescription       = "collection.description"
 
 	// rate limit
 	CollectionInsertRateMaxKey   = "collection.insertRate.max.mb"
@@ -190,6 +194,13 @@ const (
 	DatabaseForceDenyWritingKey = "database.force.deny.writing"
 	DatabaseForceDenyReadingKey = "database.force.deny.reading"
 
+	DatabaseForceDenyDDLKey           = "database.force.deny.ddl" // all ddl
+	DatabaseForceDenyCollectionDDLKey = "database.force.deny.collectionDDL"
+	DatabaseForceDenyPartitionDDLKey  = "database.force.deny.partitionDDL"
+	DatabaseForceDenyIndexDDLKey      = "database.force.deny.index"
+	DatabaseForceDenyFlushDDLKey      = "database.force.deny.flush"
+	DatabaseForceDenyCompactionDDLKey = "database.force.deny.compaction"
+
 	// collection level load properties
 	CollectionReplicaNumber  = "collection.replica.number"
 	CollectionResourceGroups = "collection.resource_groups"
@@ -199,11 +210,13 @@ const (
 const (
 	MmapEnabledKey             = "mmap.enabled"
 	LazyLoadEnableKey          = "lazyload.enabled"
+	LoadPriorityKey            = "load_priority"
 	PartitionKeyIsolationKey   = "partitionkey.isolation"
 	FieldSkipLoadKey           = "field.skipLoad"
 	IndexOffsetCacheEnabledKey = "indexoffsetcache.enabled"
 	ReplicateIDKey             = "replicate.id"
 	ReplicateEndTSKey          = "replicate.endTS"
+	IndexNonEncoding           = "index.nonEncoding"
 )
 
 const (
@@ -379,7 +392,7 @@ func CollectionLevelResourceGroups(kvs []*commonpb.KeyValuePair) ([]string, erro
 
 // GetCollectionLoadFields returns the load field ids according to the type params.
 func GetCollectionLoadFields(schema *schemapb.CollectionSchema, skipDynamicField bool) []int64 {
-	return lo.FilterMap(schema.GetFields(), func(field *schemapb.FieldSchema, _ int) (int64, bool) {
+	filter := func(field *schemapb.FieldSchema, _ int) (int64, bool) {
 		// skip system field
 		if IsSystemField(field.GetFieldID()) {
 			return field.GetFieldID(), false
@@ -396,7 +409,20 @@ func GetCollectionLoadFields(schema *schemapb.CollectionSchema, skipDynamicField
 			return field.GetFieldID(), true
 		}
 		return field.GetFieldID(), v
-	})
+	}
+	fields := lo.FilterMap(schema.GetFields(), filter)
+
+	fieldsNum := len(schema.GetFields())
+	for _, structField := range schema.GetStructArrayFields() {
+		fields = append(fields, lo.FilterMap(structField.GetFields(), filter)...)
+		fieldsNum += len(structField.GetFields())
+	}
+
+	// empty fields list means all fields will be loaded
+	if len(fields) == fieldsNum-int(SystemFieldsNum) {
+		return []int64{}
+	}
+	return fields
 }
 
 func ShouldFieldBeLoaded(kvs []*commonpb.KeyValuePair) (bool, error) {
@@ -444,7 +470,7 @@ func ValidateAutoIndexMmapConfig(autoIndexConfigEnable, isVectorField bool, inde
 
 	_, ok := indexParams[MmapEnabledKey]
 	if ok && isVectorField {
-		return fmt.Errorf("mmap index is not supported to config for the collection in auto index mode")
+		return errors.New("mmap index is not supported to config for the collection in auto index mode")
 	}
 	return nil
 }

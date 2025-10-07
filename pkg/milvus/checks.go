@@ -6,6 +6,13 @@ import (
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
 	"github.com/go-kit/log/level"
+
+	mvcol "github.com/milvus-io/milvus/client/v2/column"
+	mvindex "github.com/milvus-io/milvus/client/v2/index"
+	milvusclient "github.com/milvus-io/milvus/client/v2/milvusclient"
+
+	"github.com/milvus-io/milvus/client/v2/entity"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )

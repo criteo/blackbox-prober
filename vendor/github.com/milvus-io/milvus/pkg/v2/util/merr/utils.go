@@ -154,7 +154,7 @@ func oldCode(code int32) commonpb.ErrorCode {
 	case ErrNodeNotMatch.code():
 		return commonpb.ErrorCode_NodeIDNotMatch
 
-	case ErrCollectionNotFound.code(), ErrPartitionNotFound.code(), ErrReplicaNotFound.code():
+	case ErrPartitionNotFound.code(), ErrReplicaNotFound.code():
 		return commonpb.ErrorCode_MetaFailed
 
 	case ErrReplicaNotAvailable.code(), ErrChannelNotAvailable.code(), ErrNodeNotAvailable.code():
@@ -664,6 +664,15 @@ func WrapErrResourceGroupIllegalConfig(rg any, cfg any, msg ...string) error {
 	return err
 }
 
+// WrapErrStreamingNodeNotEnough make a streaming node is not enough error
+func WrapErrStreamingNodeNotEnough(current int, expected int, msg ...string) error {
+	err := wrapFields(ErrServiceResourceInsufficient, value("currentStreamingNode", current), value("expectedStreamingNode", expected))
+	if len(msg) > 0 {
+		err = errors.Wrap(err, strings.Join(msg, "->"))
+	}
+	return err
+}
+
 // go:deprecated
 // WrapErrResourceGroupNodeNotEnough wraps ErrResourceGroupNodeNotEnough with resource group
 func WrapErrResourceGroupNodeNotEnough(rg any, current any, expected any, msg ...string) error {
@@ -1000,14 +1009,6 @@ func WrapErrMqInternal(err error, msg ...string) error {
 	return err
 }
 
-func WrapErrTooManyConsumers(vchannel string, msg ...string) error {
-	err := wrapFields(ErrTooManyConsumers, value("vchannel", vchannel))
-	if len(msg) > 0 {
-		err = errors.Wrap(err, strings.Join(msg, "->"))
-	}
-	return err
-}
-
 func WrapErrPrivilegeNotAuthenticated(fmt string, args ...any) error {
 	err := errors.Wrapf(ErrPrivilegeNotAuthenticated, fmt, args...)
 	return err
@@ -1234,6 +1235,14 @@ func WrapErrDataNodeSlotExhausted(msg ...string) error {
 
 func WrapErrDuplicatedCompactionTask(msg ...string) error {
 	err := error(ErrDuplicatedCompactionTask)
+	if len(msg) > 0 {
+		err = errors.Wrap(err, strings.Join(msg, "->"))
+	}
+	return err
+}
+
+func WrapErrOldSessionExists(msg ...string) error {
+	err := error(ErrOldSessionExists)
 	if len(msg) > 0 {
 		err = errors.Wrap(err, strings.Join(msg, "->"))
 	}

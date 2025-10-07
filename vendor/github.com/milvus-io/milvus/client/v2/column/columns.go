@@ -196,6 +196,9 @@ func FieldDataColumn(fd *schemapb.FieldData, begin, end int) (Column, error) {
 	case schemapb.DataType_Double:
 		return parseScalarData(fd.GetFieldName(), fd.GetScalars().GetDoubleData().GetData(), begin, end, validData, NewColumnDouble, NewNullableColumnDouble)
 
+	case schemapb.DataType_Timestamptz:
+		return parseScalarData(fd.GetFieldName(), fd.GetScalars().GetTimestamptzData().GetData(), begin, end, validData, NewColumnTimestamptz, NewNullableColumnTimestamptz)
+
 	case schemapb.DataType_String:
 		return parseScalarData(fd.GetFieldName(), fd.GetScalars().GetStringData().GetData(), begin, end, validData, NewColumnString, NewNullableColumnString)
 
@@ -288,6 +291,7 @@ func FieldDataColumn(fd *schemapb.FieldData, begin, end int) (Column, error) {
 			vector = append(vector, v)
 		}
 		return NewColumnBFloat16Vector(fd.GetFieldName(), dim, vector), nil
+
 	case schemapb.DataType_SparseFloatVector:
 		sparseVectors := fd.GetVectors().GetSparseFloatVector()
 		if sparseVectors == nil {
@@ -307,6 +311,29 @@ func FieldDataColumn(fd *schemapb.FieldData, begin, end int) (Column, error) {
 			vectors = append(vectors, vector)
 		}
 		return NewColumnSparseVectors(fd.GetFieldName(), vectors), nil
+
+	case schemapb.DataType_Int8Vector:
+		vectors := fd.GetVectors()
+		x, ok := vectors.GetData().(*schemapb.VectorField_Int8Vector)
+		if !ok {
+			return nil, errFieldDataTypeNotMatch
+		}
+		data := x.Int8Vector
+		dim := int(vectors.GetDim())
+		if end < 0 {
+			end = len(data) / dim
+		}
+		vector := make([][]int8, 0, end-begin) // shall not have remanunt
+		// TODO caiyd: has better way to convert []byte to []int8 ?
+		for i := begin; i < end; i++ {
+			v := make([]int8, dim)
+			for j := 0; j < dim; j++ {
+				v[j] = int8(data[i*dim+j])
+			}
+			vector = append(vector, v)
+		}
+		return NewColumnInt8Vector(fd.GetFieldName(), dim, vector), nil
+
 	default:
 		return nil, fmt.Errorf("unsupported data type %s", fd.GetType())
 	}

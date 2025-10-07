@@ -17,23 +17,47 @@
 package paramtable
 
 import (
+	"os"
 	"strconv"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/milvus-io/milvus/pkg/v2/log"
+	"github.com/milvus-io/milvus/pkg/v2/util/typeutil"
+)
+
+const (
+	MilvusConfigRefreshIntervalEnvKey = "MILVUS_CONFIG_REFRESH_INTERVAL"
 )
 
 var (
-	once       sync.Once
-	params     ComponentParam
-	hookParams hookConfig
+	once         sync.Once
+	params       ComponentParam
+	runtimeParam = runtimeConfig{
+		components: typeutil.ConcurrentSet[string]{},
+	}
+	hookParams   hookConfig
+	cipherParams cipherConfig
 )
 
 func Init() {
 	once.Do(func() {
-		baseTable := NewBaseTable()
+		opts := []Option{}
+		if refreshInterval := os.Getenv(MilvusConfigRefreshIntervalEnvKey); refreshInterval != "" {
+			if duration, err := time.ParseDuration(refreshInterval); err == nil {
+				log.Info("set config refresh interval", zap.Duration("duration", duration))
+				opts = append(opts, Interval(duration))
+			}
+		}
+		baseTable := NewBaseTable(opts...)
 		params.Init(baseTable)
 		hookBaseTable := NewBaseTableFromYamlOnly(hookYamlFile)
 		hookParams.init(hookBaseTable)
+
+		cipherBaseTable := NewBaseTableFromYamlOnly(cipherYamlFile)
+		cipherParams.init(cipherBaseTable)
 	})
 }
 
@@ -42,10 +66,13 @@ func InitWithBaseTable(baseTable *BaseTable) {
 		params.Init(baseTable)
 		hookBaseTable := NewBaseTableFromYamlOnly(hookYamlFile)
 		hookParams.init(hookBaseTable)
+		cipherBaseTable := NewBaseTableFromYamlOnly(cipherYamlFile)
+		cipherParams.init(cipherBaseTable)
 	})
 }
 
 func Get() *ComponentParam {
+	Init()
 	return &params
 }
 
@@ -57,12 +84,16 @@ func GetHookParams() *hookConfig {
 	return &hookParams
 }
 
+func GetCipherParams() *cipherConfig {
+	return &cipherParams
+}
+
 func SetNodeID(newID UniqueID) {
-	params.RuntimeConfig.NodeID.SetValue(newID)
+	runtimeParam.nodeID.Store(newID)
 }
 
 func GetNodeID() UniqueID {
-	return params.RuntimeConfig.NodeID.GetAsInt64()
+	return runtimeParam.nodeID.Load()
 }
 
 func GetStringNodeID() string {
@@ -70,25 +101,33 @@ func GetStringNodeID() string {
 }
 
 func SetRole(role string) {
-	params.RuntimeConfig.Role.SetValue(role)
+	runtimeParam.role.Store(role)
 }
 
 func GetRole() string {
-	return params.RuntimeConfig.Role.GetAsString()
+	return runtimeParam.role.Load()
 }
 
 func SetCreateTime(d time.Time) {
-	params.RuntimeConfig.CreateTime.SetValue(d)
+	runtimeParam.createTime.Store(d)
 }
 
 func GetCreateTime() time.Time {
-	return params.RuntimeConfig.CreateTime.GetAsTime()
+	return runtimeParam.createTime.Load()
 }
 
 func SetUpdateTime(d time.Time) {
-	params.RuntimeConfig.UpdateTime.SetValue(d)
+	runtimeParam.updateTime.Store(d)
 }
 
 func GetUpdateTime() time.Time {
-	return params.RuntimeConfig.UpdateTime.GetAsTime()
+	return runtimeParam.updateTime.Load()
+}
+
+func SetLocalComponentEnabled(component string) {
+	runtimeParam.components.Insert(component)
+}
+
+func IsLocalComponentEnabled(component string) bool {
+	return runtimeParam.components.Contain(component)
 }

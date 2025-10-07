@@ -19,8 +19,6 @@ github.com/aerospike/aerospike-client-go/v7/utils/buffer
 # github.com/alecthomas/kingpin/v2 v2.3.1
 ## explicit; go 1.13
 github.com/alecthomas/kingpin/v2
-# github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751
-## explicit
 # github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 ## explicit; go 1.15
 github.com/alecthomas/units
@@ -99,7 +97,7 @@ github.com/coreos/go-semver/semver
 ## explicit; go 1.12
 github.com/coreos/go-systemd/v22/dbus
 github.com/coreos/go-systemd/v22/journal
-# github.com/davecgh/go-spew v1.1.1
+# github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 ## explicit
 github.com/davecgh/go-spew/spew
 # github.com/docker/go-units v0.4.0
@@ -225,8 +223,8 @@ github.com/kr/text
 # github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0
 ## explicit; go 1.16
 github.com/lufia/plan9stats
-# github.com/mattn/go-colorable v0.1.12
-## explicit; go 1.13
+# github.com/mattn/go-colorable v0.1.13
+## explicit; go 1.15
 github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.19
 ## explicit; go 1.15
@@ -234,15 +232,16 @@ github.com/mattn/go-isatty
 # github.com/matttproud/golang_protobuf_extensions v1.0.4
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/milvus-io/milvus-proto/go-api/v2 v2.5.16
+# github.com/milvus-io/milvus-proto/go-api/v2 v2.6.1-0.20250819024338-07695f709619
 ## explicit; go 1.18
 github.com/milvus-io/milvus-proto/go-api/v2/commonpb
 github.com/milvus-io/milvus-proto/go-api/v2/federpb
+github.com/milvus-io/milvus-proto/go-api/v2/hook
 github.com/milvus-io/milvus-proto/go-api/v2/milvuspb
 github.com/milvus-io/milvus-proto/go-api/v2/msgpb
 github.com/milvus-io/milvus-proto/go-api/v2/rgpb
 github.com/milvus-io/milvus-proto/go-api/v2/schemapb
-# github.com/milvus-io/milvus/client/v2 v2.5.6
+# github.com/milvus-io/milvus/client/v2 v2.6.0
 ## explicit; go 1.24.4
 github.com/milvus-io/milvus/client/v2/column
 github.com/milvus-io/milvus/client/v2/common
@@ -250,12 +249,16 @@ github.com/milvus-io/milvus/client/v2/entity
 github.com/milvus-io/milvus/client/v2/index
 github.com/milvus-io/milvus/client/v2/milvusclient
 github.com/milvus-io/milvus/client/v2/row
-# github.com/milvus-io/milvus/pkg/v2 v2.5.7
-## explicit; go 1.21
+# github.com/milvus-io/milvus/pkg/v2 v2.6.0
+## explicit; go 1.24.4
 github.com/milvus-io/milvus/pkg/v2/common
 github.com/milvus-io/milvus/pkg/v2/config
 github.com/milvus-io/milvus/pkg/v2/log
 github.com/milvus-io/milvus/pkg/v2/metrics
+github.com/milvus-io/milvus/pkg/v2/proto/messagespb
+github.com/milvus-io/milvus/pkg/v2/proto/streamingpb
+github.com/milvus-io/milvus/pkg/v2/streaming/util/message
+github.com/milvus-io/milvus/pkg/v2/streaming/util/types
 github.com/milvus-io/milvus/pkg/v2/util
 github.com/milvus-io/milvus/pkg/v2/util/commonpbutil
 github.com/milvus-io/milvus/pkg/v2/util/conc
@@ -269,6 +272,7 @@ github.com/milvus-io/milvus/pkg/v2/util/metric
 github.com/milvus-io/milvus/pkg/v2/util/metricsinfo
 github.com/milvus-io/milvus/pkg/v2/util/paramtable
 github.com/milvus-io/milvus/pkg/v2/util/retry
+github.com/milvus-io/milvus/pkg/v2/util/tsoutil
 github.com/milvus-io/milvus/pkg/v2/util/typeutil
 # github.com/mitchellh/go-homedir v1.1.0
 ## explicit
@@ -295,7 +299,7 @@ github.com/panjf2000/ants/v2/pkg/sync
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/pmezard/go-difflib v1.0.0
+# github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c
@@ -329,14 +333,18 @@ github.com/rogpeppe/go-internal/fmtsort
 # github.com/samber/lo v1.27.0
 ## explicit; go 1.18
 github.com/samber/lo
-# github.com/shirou/gopsutil/v3 v3.22.9
+# github.com/shirou/gopsutil/v3 v3.23.7
 ## explicit; go 1.15
+github.com/shirou/gopsutil/v3/common
 github.com/shirou/gopsutil/v3/cpu
 github.com/shirou/gopsutil/v3/disk
 github.com/shirou/gopsutil/v3/internal/common
 github.com/shirou/gopsutil/v3/mem
 github.com/shirou/gopsutil/v3/net
 github.com/shirou/gopsutil/v3/process
+# github.com/shoenig/go-m1cpu v0.1.6
+## explicit; go 1.20
+github.com/shoenig/go-m1cpu
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
@@ -365,11 +373,11 @@ github.com/tidwall/match
 # github.com/tidwall/pretty v1.2.0
 ## explicit; go 1.16
 github.com/tidwall/pretty
-# github.com/tklauser/go-sysconf v0.3.10
+# github.com/tklauser/go-sysconf v0.3.11
 ## explicit; go 1.13
 github.com/tklauser/go-sysconf
-# github.com/tklauser/numcpus v0.4.0
-## explicit; go 1.11
+# github.com/tklauser/numcpus v0.6.0
+## explicit; go 1.13
 github.com/tklauser/numcpus
 # github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802
 ## explicit
@@ -397,7 +405,7 @@ github.com/yuin/gopher-lua
 github.com/yuin/gopher-lua/ast
 github.com/yuin/gopher-lua/parse
 github.com/yuin/gopher-lua/pm
-# github.com/yusufpapurcu/wmi v1.2.2
+# github.com/yusufpapurcu/wmi v1.2.3
 ## explicit; go 1.16
 github.com/yusufpapurcu/wmi
 # go.etcd.io/bbolt v1.3.6
@@ -597,8 +605,8 @@ golang.org/x/net/idna
 golang.org/x/net/internal/httpcommon
 golang.org/x/net/internal/timeseries
 golang.org/x/net/trace
-# golang.org/x/oauth2 v0.20.0
-## explicit; go 1.18
+# golang.org/x/oauth2 v0.27.0
+## explicit; go 1.23.0
 golang.org/x/oauth2
 golang.org/x/oauth2/clientcredentials
 golang.org/x/oauth2/internal
@@ -622,12 +630,10 @@ golang.org/x/text/unicode/norm
 # golang.org/x/time v0.5.0
 ## explicit; go 1.18
 golang.org/x/time/rate
-# google.golang.org/appengine v1.6.8
-## explicit; go 1.11
-# google.golang.org/genproto v0.0.0-20231106174013-bbf56f31fb17
-## explicit; go 1.19
+# google.golang.org/genproto v0.0.0-20240624140628-dc46fd24d27d
+## explicit; go 1.20
 google.golang.org/genproto/protobuf/field_mask
-# google.golang.org/genproto/googleapis/api v0.0.0-20240528184218-531527333157
+# google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4
 ## explicit; go 1.20
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
@@ -730,12 +736,11 @@ google.golang.org/protobuf/types/descriptorpb
 google.golang.org/protobuf/types/gofeaturespb
 google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
+google.golang.org/protobuf/types/known/emptypb
 google.golang.org/protobuf/types/known/fieldmaskpb
 google.golang.org/protobuf/types/known/structpb
 google.golang.org/protobuf/types/known/timestamppb
 google.golang.org/protobuf/types/known/wrapperspb
-# gopkg.in/alecthomas/kingpin.v2 v2.2.6
-## explicit
 # gopkg.in/inf.v0 v0.9.1
 ## explicit
 gopkg.in/inf.v0

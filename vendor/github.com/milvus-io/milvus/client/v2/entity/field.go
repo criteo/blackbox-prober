@@ -46,6 +46,8 @@ func (t FieldType) Name() string {
 		return "Float"
 	case FieldTypeDouble:
 		return "Double"
+	case FieldTypeTimestamptz:
+		return "Timestamptz"
 	case FieldTypeString:
 		return "String"
 	case FieldTypeVarChar:
@@ -62,6 +64,8 @@ func (t FieldType) Name() string {
 		return "Float16Vector"
 	case FieldTypeBFloat16Vector:
 		return "BFloat16Vector"
+	case FieldTypeInt8Vector:
+		return "Int8Vector"
 	default:
 		return "undefined"
 	}
@@ -84,6 +88,8 @@ func (t FieldType) String() string {
 		return "float32"
 	case FieldTypeDouble:
 		return "float64"
+	case FieldTypeTimestamptz:
+		return "timestamptz"
 	case FieldTypeString:
 		return "string"
 	case FieldTypeVarChar:
@@ -100,6 +106,8 @@ func (t FieldType) String() string {
 		return "[]byte"
 	case FieldTypeBFloat16Vector:
 		return "[]byte"
+	case FieldTypeInt8Vector:
+		return "[]int8"
 	default:
 		return "undefined"
 	}
@@ -122,6 +130,8 @@ func (t FieldType) PbFieldType() (string, string) {
 		return "Float", "float32"
 	case FieldTypeDouble:
 		return "Double", "float64"
+	case FieldTypeTimestamptz:
+		return "Timestamptz", "int64" // Timestamptz
 	case FieldTypeString:
 		return "String", "string"
 	case FieldTypeVarChar:
@@ -136,6 +146,8 @@ func (t FieldType) PbFieldType() (string, string) {
 		return "[]byte", ""
 	case FieldTypeBFloat16Vector:
 		return "[]byte", ""
+	case FieldTypeInt8Vector:
+		return "[]int8", ""
 	default:
 		return "undefined", ""
 	}
@@ -159,6 +171,8 @@ const (
 	FieldTypeFloat FieldType = 10
 	// FieldTypeDouble field type double
 	FieldTypeDouble FieldType = 11
+	// FieldTypeTimestamptz field type timestamptz
+	FieldTypeTimestamptz FieldType = 15
 	// FieldTypeString field type string
 	FieldTypeString FieldType = 20
 	// FieldTypeVarChar field type varchar
@@ -177,6 +191,8 @@ const (
 	FieldTypeBFloat16Vector FieldType = 103
 	// FieldTypeBinaryVector field type sparse vector
 	FieldTypeSparseVector FieldType = 104
+	// FieldTypeInt8Vector field type int8 vector
+	FieldTypeInt8Vector FieldType = 105
 )
 
 // Field represent field schema in milvus
@@ -310,6 +326,15 @@ func (f *Field) WithDefaultValueDouble(defaultValue float64) *Field {
 	f.DefaultValue = &schemapb.ValueField{
 		Data: &schemapb.ValueField_DoubleData{
 			DoubleData: defaultValue,
+		},
+	}
+	return f
+}
+
+func (f *Field) WithDefaultValueTimestamptz(defaultValue int64) *Field {
+	f.DefaultValue = &schemapb.ValueField{
+		Data: &schemapb.ValueField_TimestamptzData{
+			TimestamptzData: defaultValue,
 		},
 	}
 	return f

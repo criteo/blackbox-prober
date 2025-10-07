@@ -52,6 +52,7 @@ type columnBasedDataOption struct {
 	collName      string
 	partitionName string
 	columns       []column.Column
+	partialUpdate bool
 }
 
 func (opt *columnBasedDataOption) WriteBackPKs(_ *entity.Schema, _ column.Column) error {
@@ -101,7 +102,8 @@ func (opt *columnBasedDataOption) processInsertColumns(colSchema *entity.Schema,
 			return nil, 0, fmt.Errorf("param column %s has type %v but collection field definition is %v", col.Name(), col.Type(), field.DataType)
 		}
 		if field.DataType == entity.FieldTypeFloatVector || field.DataType == entity.FieldTypeBinaryVector ||
-			field.DataType == entity.FieldTypeFloat16Vector || field.DataType == entity.FieldTypeBFloat16Vector {
+			field.DataType == entity.FieldTypeFloat16Vector || field.DataType == entity.FieldTypeBFloat16Vector ||
+			field.DataType == entity.FieldTypeInt8Vector {
 			dim := 0
 			switch column := col.(type) {
 			case *column.ColumnFloatVector:
@@ -111,6 +113,8 @@ func (opt *columnBasedDataOption) processInsertColumns(colSchema *entity.Schema,
 			case *column.ColumnFloat16Vector:
 				dim = column.Dim()
 			case *column.ColumnBFloat16Vector:
+				dim = column.Dim()
+			case *column.ColumnInt8Vector:
 				dim = column.Dim()
 			}
 			if fmt.Sprintf("%d", dim) != field.TypeParams[entity.TypeParamDim] {
@@ -240,8 +244,18 @@ func (opt *columnBasedDataOption) WithBinaryVectorColumn(colName string, dim int
 	return opt.WithColumns(column)
 }
 
+func (opt *columnBasedDataOption) WithInt8VectorColumn(colName string, dim int, data [][]int8) *columnBasedDataOption {
+	column := column.NewColumnInt8Vector(colName, dim, data)
+	return opt.WithColumns(column)
+}
+
 func (opt *columnBasedDataOption) WithPartition(partitionName string) *columnBasedDataOption {
 	opt.partitionName = partitionName
+	return opt
+}
+
+func (opt *columnBasedDataOption) WithPartialUpdate(partialUpdate bool) *columnBasedDataOption {
+	opt.partialUpdate = partialUpdate
 	return opt
 }
 
@@ -274,6 +288,7 @@ func (opt *columnBasedDataOption) UpsertRequest(coll *entity.Collection) (*milvu
 		FieldsData:      fieldsData,
 		NumRows:         uint32(rowNum),
 		SchemaTimestamp: coll.UpdateTimestamp,
+		PartialUpdate:   opt.partialUpdate,
 	}, nil
 }
 
@@ -332,6 +347,7 @@ func (opt *rowBasedDataOption) UpsertRequest(coll *entity.Collection) (*milvuspb
 		PartitionName:  opt.partitionName,
 		FieldsData:     fieldsData,
 		NumRows:        uint32(rowNum),
+		PartialUpdate:  opt.partialUpdate,
 	}, nil
 }
 

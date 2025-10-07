@@ -282,7 +282,7 @@ func GetVirtualChannel(pchannel string, collectionID int64, idx int) string {
 // ConvertChannelName assembles channel name according to parameters.
 func ConvertChannelName(chanName string, tokenFrom string, tokenTo string) (string, error) {
 	if tokenFrom == "" {
-		return "", fmt.Errorf("the tokenFrom is empty")
+		return "", errors.New("the tokenFrom is empty")
 	}
 	if !strings.Contains(chanName, tokenFrom) {
 		return "", fmt.Errorf("cannot find token '%s' in '%s'", tokenFrom, chanName)
@@ -303,6 +303,11 @@ func GetCollectionIDFromVChannel(vChannelName string) int64 {
 }
 
 func getNumRowsOfScalarField(datas interface{}) uint64 {
+	realTypeDatas := reflect.ValueOf(datas)
+	return uint64(realTypeDatas.Len())
+}
+
+func getNumRowsOfArrayVectorField(datas interface{}) uint64 {
 	realTypeDatas := reflect.ValueOf(datas)
 	return uint64(realTypeDatas.Len())
 }
@@ -354,6 +359,17 @@ func GetNumRowsOfBFloat16VectorField(bf16Datas []byte, dim int64) (uint64, error
 	return uint64((int64(l)) / dim / 2), nil
 }
 
+func GetNumRowsOfInt8VectorField(iDatas []byte, dim int64) (uint64, error) {
+	if dim <= 0 {
+		return 0, fmt.Errorf("dim(%d) should be greater than 0", dim)
+	}
+	l := len(iDatas)
+	if int64(l)%dim != 0 {
+		return 0, fmt.Errorf("the length(%d) of int8 data should divide the dim(%d)", l, dim)
+	}
+	return uint64(int64(l) / dim), nil
+}
+
 // GetNumRowOfFieldDataWithSchema returns num of rows with schema specification.
 func GetNumRowOfFieldDataWithSchema(fieldData *schemapb.FieldData, helper *typeutil.SchemaHelper) (uint64, error) {
 	var fieldNumRows uint64
@@ -373,7 +389,7 @@ func GetNumRowOfFieldDataWithSchema(fieldData *schemapb.FieldData, helper *typeu
 		fieldNumRows = getNumRowsOfScalarField(fieldData.GetScalars().GetFloatData().GetData())
 	case schemapb.DataType_Double:
 		fieldNumRows = getNumRowsOfScalarField(fieldData.GetScalars().GetDoubleData().GetData())
-	case schemapb.DataType_String, schemapb.DataType_VarChar:
+	case schemapb.DataType_String, schemapb.DataType_VarChar, schemapb.DataType_Text:
 		fieldNumRows = getNumRowsOfScalarField(fieldData.GetScalars().GetStringData().GetData())
 	case schemapb.DataType_Array:
 		fieldNumRows = getNumRowsOfScalarField(fieldData.GetScalars().GetArrayData().GetData())
@@ -405,6 +421,14 @@ func GetNumRowOfFieldDataWithSchema(fieldData *schemapb.FieldData, helper *typeu
 		}
 	case schemapb.DataType_SparseFloatVector:
 		fieldNumRows = uint64(len(fieldData.GetVectors().GetSparseFloatVector().GetContents()))
+	case schemapb.DataType_Int8Vector:
+		dim := fieldData.GetVectors().GetDim()
+		fieldNumRows, err = GetNumRowsOfInt8VectorField(fieldData.GetVectors().GetInt8Vector(), dim)
+		if err != nil {
+			return 0, err
+		}
+	case schemapb.DataType_ArrayOfVector:
+		fieldNumRows = getNumRowsOfArrayVectorField(fieldData.GetVectors().GetVectorArray().GetData())
 	default:
 		return 0, fmt.Errorf("%s is not supported now", fieldSchema.GetDataType())
 	}
@@ -468,6 +492,14 @@ func GetNumRowOfFieldData(fieldData *schemapb.FieldData) (uint64, error) {
 			}
 		case *schemapb.VectorField_SparseFloatVector:
 			fieldNumRows = uint64(len(vectorField.GetSparseFloatVector().GetContents()))
+		case *schemapb.VectorField_Int8Vector:
+			dim := vectorField.GetDim()
+			fieldNumRows, err = GetNumRowsOfInt8VectorField(vectorField.GetInt8Vector(), dim)
+			if err != nil {
+				return 0, err
+			}
+		case *schemapb.VectorField_VectorArray:
+			fieldNumRows = getNumRowsOfArrayVectorField(vectorField.GetVectorArray().Data)
 		default:
 			return 0, fmt.Errorf("%s is not supported now", vectorFieldType)
 		}

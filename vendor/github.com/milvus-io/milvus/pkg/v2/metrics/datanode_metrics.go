@@ -18,6 +18,7 @@ package metrics
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -114,18 +115,6 @@ var (
 			nodeIDLabelName,
 			msgTypeLabelName,
 			collectionIDLabelName,
-		})
-
-	DataNodeEncodeBufferLatency = prometheus.NewHistogramVec( // TODO: arguably
-		prometheus.HistogramOpts{
-			Namespace: milvusNamespace,
-			Subsystem: typeutil.DataNodeRole,
-			Name:      "encode_buffer_latency",
-			Help:      "latency of encode buffer data",
-			Buckets:   buckets,
-		}, []string{
-			nodeIDLabelName,
-			segmentLevelLabelName,
 		})
 
 	DataNodeSave2StorageLatency = prometheus.NewHistogramVec(
@@ -254,10 +243,111 @@ var (
 			Name:      "compaction_missing_delete_count",
 			Help:      "Number of missing deletes in compaction",
 		}, []string{collectionIDLabelName})
+
+	// index service metrics
+	// unit second, from 1ms to 2hrs
+	indexBucket = []float64{0.001, 0.1, 0.5, 1, 5, 10, 20, 50, 100, 250, 500, 1000, 3600, 5000, 10000}
+
+	DataNodeBuildIndexTaskCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "index_task_count",
+			Help:      "number of tasks that index node received",
+		}, []string{nodeIDLabelName, statusLabelName})
+
+	DataNodeLoadFieldLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "load_field_latency",
+			Help:      "latency of loading the field data",
+			Buckets:   indexBucket,
+		}, []string{nodeIDLabelName})
+
+	DataNodeDecodeFieldLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "decode_field_latency",
+			Help:      "latency of decode field data",
+			Buckets:   indexBucket,
+		}, []string{nodeIDLabelName})
+
+	DataNodeKnowhereBuildIndexLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "knowhere_build_index_latency",
+			Help:      "latency of building the index by knowhere",
+			Buckets:   indexBucket,
+		}, []string{nodeIDLabelName})
+
+	DataNodeEncodeIndexFileLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "encode_index_latency",
+			Help:      "latency of encoding the index file",
+			Buckets:   indexBucket,
+		}, []string{nodeIDLabelName})
+
+	DataNodeSaveIndexFileLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "save_index_latency",
+			Help:      "latency of saving the index file",
+			Buckets:   indexBucket,
+		}, []string{nodeIDLabelName})
+
+	DataNodeIndexTaskLatencyInQueue = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "index_task_latency_in_queue",
+			Help:      "latency of index task in queue",
+			Buckets:   buckets,
+		}, []string{nodeIDLabelName})
+
+	DataNodeBuildIndexLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "build_index_latency",
+			Help:      "latency of build index for segment",
+			Buckets:   indexBucket,
+		}, []string{nodeIDLabelName})
+
+	DataNodeBuildJSONStatsLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.IndexNodeRole,
+			Name:      "task_build_json_stats_latency",
+			Help:      "latency of building the index by knowhere",
+			Buckets:   indexBucket,
+		}, []string{nodeIDLabelName})
+
+	DataNodeSlot = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: milvusNamespace,
+			Subsystem: typeutil.DataNodeRole,
+			Name:      "slot",
+			Help:      "number of available and used slot",
+		}, []string{nodeIDLabelName, "type"})
 )
+
+var registerDNOnce sync.Once
 
 // RegisterDataNode registers DataNode metrics
 func RegisterDataNode(registry *prometheus.Registry) {
+	registerDNOnce.Do(func() {
+		registerDataNodeOnce(registry)
+	})
+}
+
+// registerDataNodeOnce registers DataNode metrics
+func registerDataNodeOnce(registry *prometheus.Registry) {
 	registry.MustRegister(DataNodeNumFlowGraphs)
 	// input related
 	registry.MustRegister(DataNodeConsumeMsgRowsCount)
@@ -269,7 +359,6 @@ func RegisterDataNode(registry *prometheus.Registry) {
 	registry.MustRegister(DataNodeFlowGraphBufferDataSize)
 	// output related
 	registry.MustRegister(DataNodeAutoFlushBufferCount)
-	registry.MustRegister(DataNodeEncodeBufferLatency)
 	registry.MustRegister(DataNodeSave2StorageLatency)
 	registry.MustRegister(DataNodeFlushBufferCount)
 	registry.MustRegister(DataNodeFlushReqCounter)
@@ -284,6 +373,18 @@ func RegisterDataNode(registry *prometheus.Registry) {
 	// deprecated metrics
 	registry.MustRegister(DataNodeForwardDeleteMsgTimeTaken)
 	registry.MustRegister(DataNodeNumProducers)
+
+	// index metrics
+	registry.MustRegister(DataNodeBuildIndexTaskCounter)
+	registry.MustRegister(DataNodeLoadFieldLatency)
+	registry.MustRegister(DataNodeDecodeFieldLatency)
+	registry.MustRegister(DataNodeKnowhereBuildIndexLatency)
+	registry.MustRegister(DataNodeEncodeIndexFileLatency)
+	registry.MustRegister(DataNodeSaveIndexFileLatency)
+	registry.MustRegister(DataNodeIndexTaskLatencyInQueue)
+	registry.MustRegister(DataNodeBuildIndexLatency)
+	registry.MustRegister(DataNodeBuildJSONStatsLatency)
+	registry.MustRegister(DataNodeSlot)
 }
 
 func CleanupDataNodeCollectionMetrics(nodeID int64, collectionID int64, channel string) {

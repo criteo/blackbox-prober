@@ -250,6 +250,13 @@ func getColumnCreators(sch *entity.Schema) map[string]columnCreator {
 			case entity.FieldTypeSparseVector:
 				data := make([]entity.SparseEmbedding, 0, rowsLen)
 				col = column.NewColumnSparseVectors(field.Name, data)
+			case entity.FieldTypeInt8Vector:
+				data := make([][]int8, 0, rowsLen)
+				dim, err := field.GetDim()
+				if err != nil {
+					return nil, err
+				}
+				col = column.NewColumnInt8Vector(field.Name, int(dim), data)
 			}
 
 			if field.Nullable {

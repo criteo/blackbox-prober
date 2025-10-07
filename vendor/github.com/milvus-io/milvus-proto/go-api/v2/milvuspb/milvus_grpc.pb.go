@@ -27,6 +27,7 @@ const (
 	MilvusService_LoadCollection_FullMethodName              = "/milvus.proto.milvus.MilvusService/LoadCollection"
 	MilvusService_ReleaseCollection_FullMethodName           = "/milvus.proto.milvus.MilvusService/ReleaseCollection"
 	MilvusService_DescribeCollection_FullMethodName          = "/milvus.proto.milvus.MilvusService/DescribeCollection"
+	MilvusService_BatchDescribeCollection_FullMethodName     = "/milvus.proto.milvus.MilvusService/BatchDescribeCollection"
 	MilvusService_GetCollectionStatistics_FullMethodName     = "/milvus.proto.milvus.MilvusService/GetCollectionStatistics"
 	MilvusService_ShowCollections_FullMethodName             = "/milvus.proto.milvus.MilvusService/ShowCollections"
 	MilvusService_AlterCollection_FullMethodName             = "/milvus.proto.milvus.MilvusService/AlterCollection"
@@ -61,6 +62,7 @@ const (
 	MilvusService_Query_FullMethodName                       = "/milvus.proto.milvus.MilvusService/Query"
 	MilvusService_CalcDistance_FullMethodName                = "/milvus.proto.milvus.MilvusService/CalcDistance"
 	MilvusService_FlushAll_FullMethodName                    = "/milvus.proto.milvus.MilvusService/FlushAll"
+	MilvusService_AddCollectionField_FullMethodName          = "/milvus.proto.milvus.MilvusService/AddCollectionField"
 	MilvusService_GetFlushState_FullMethodName               = "/milvus.proto.milvus.MilvusService/GetFlushState"
 	MilvusService_GetFlushAllState_FullMethodName            = "/milvus.proto.milvus.MilvusService/GetFlushAllState"
 	MilvusService_GetPersistentSegmentInfo_FullMethodName    = "/milvus.proto.milvus.MilvusService/GetPersistentSegmentInfo"
@@ -116,6 +118,16 @@ const (
 	MilvusService_ListPrivilegeGroups_FullMethodName         = "/milvus.proto.milvus.MilvusService/ListPrivilegeGroups"
 	MilvusService_OperatePrivilegeGroup_FullMethodName       = "/milvus.proto.milvus.MilvusService/OperatePrivilegeGroup"
 	MilvusService_RunAnalyzer_FullMethodName                 = "/milvus.proto.milvus.MilvusService/RunAnalyzer"
+	MilvusService_AddFileResource_FullMethodName             = "/milvus.proto.milvus.MilvusService/AddFileResource"
+	MilvusService_RemoveFileResource_FullMethodName          = "/milvus.proto.milvus.MilvusService/RemoveFileResource"
+	MilvusService_ListFileResources_FullMethodName           = "/milvus.proto.milvus.MilvusService/ListFileResources"
+	MilvusService_AddUserTags_FullMethodName                 = "/milvus.proto.milvus.MilvusService/AddUserTags"
+	MilvusService_DeleteUserTags_FullMethodName              = "/milvus.proto.milvus.MilvusService/DeleteUserTags"
+	MilvusService_GetUserTags_FullMethodName                 = "/milvus.proto.milvus.MilvusService/GetUserTags"
+	MilvusService_ListUsersWithTag_FullMethodName            = "/milvus.proto.milvus.MilvusService/ListUsersWithTag"
+	MilvusService_CreateRowPolicy_FullMethodName             = "/milvus.proto.milvus.MilvusService/CreateRowPolicy"
+	MilvusService_DropRowPolicy_FullMethodName               = "/milvus.proto.milvus.MilvusService/DropRowPolicy"
+	MilvusService_ListRowPolicies_FullMethodName             = "/milvus.proto.milvus.MilvusService/ListRowPolicies"
 )
 
 // MilvusServiceClient is the client API for MilvusService service.
@@ -128,6 +140,7 @@ type MilvusServiceClient interface {
 	LoadCollection(ctx context.Context, in *LoadCollectionRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
 	ReleaseCollection(ctx context.Context, in *ReleaseCollectionRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
 	DescribeCollection(ctx context.Context, in *DescribeCollectionRequest, opts ...grpc.CallOption) (*DescribeCollectionResponse, error)
+	BatchDescribeCollection(ctx context.Context, in *BatchDescribeCollectionRequest, opts ...grpc.CallOption) (*BatchDescribeCollectionResponse, error)
 	GetCollectionStatistics(ctx context.Context, in *GetCollectionStatisticsRequest, opts ...grpc.CallOption) (*GetCollectionStatisticsResponse, error)
 	ShowCollections(ctx context.Context, in *ShowCollectionsRequest, opts ...grpc.CallOption) (*ShowCollectionsResponse, error)
 	AlterCollection(ctx context.Context, in *AlterCollectionRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
@@ -166,6 +179,7 @@ type MilvusServiceClient interface {
 	Query(ctx context.Context, in *QueryRequest, opts ...grpc.CallOption) (*QueryResults, error)
 	CalcDistance(ctx context.Context, in *CalcDistanceRequest, opts ...grpc.CallOption) (*CalcDistanceResults, error)
 	FlushAll(ctx context.Context, in *FlushAllRequest, opts ...grpc.CallOption) (*FlushAllResponse, error)
+	AddCollectionField(ctx context.Context, in *AddCollectionFieldRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
 	GetFlushState(ctx context.Context, in *GetFlushStateRequest, opts ...grpc.CallOption) (*GetFlushStateResponse, error)
 	GetFlushAllState(ctx context.Context, in *GetFlushAllStateRequest, opts ...grpc.CallOption) (*GetFlushAllStateResponse, error)
 	GetPersistentSegmentInfo(ctx context.Context, in *GetPersistentSegmentInfoRequest, opts ...grpc.CallOption) (*GetPersistentSegmentInfoResponse, error)
@@ -226,6 +240,17 @@ type MilvusServiceClient interface {
 	ListPrivilegeGroups(ctx context.Context, in *ListPrivilegeGroupsRequest, opts ...grpc.CallOption) (*ListPrivilegeGroupsResponse, error)
 	OperatePrivilegeGroup(ctx context.Context, in *OperatePrivilegeGroupRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
 	RunAnalyzer(ctx context.Context, in *RunAnalyzerRequest, opts ...grpc.CallOption) (*RunAnalyzerResponse, error)
+	AddFileResource(ctx context.Context, in *AddFileResourceRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
+	RemoveFileResource(ctx context.Context, in *RemoveFileResourceRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
+	ListFileResources(ctx context.Context, in *ListFileResourcesRequest, opts ...grpc.CallOption) (*ListFileResourcesResponse, error)
+	// Row Level Security (RLS) APIs
+	AddUserTags(ctx context.Context, in *AddUserTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
+	DeleteUserTags(ctx context.Context, in *DeleteUserTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
+	GetUserTags(ctx context.Context, in *GetUserTagsRequest, opts ...grpc.CallOption) (*GetUserTagsResponse, error)
+	ListUsersWithTag(ctx context.Context, in *ListUsersWithTagRequest, opts ...grpc.CallOption) (*ListUsersWithTagResponse, error)
+	CreateRowPolicy(ctx context.Context, in *CreateRowPolicyRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
+	DropRowPolicy(ctx context.Context, in *DropRowPolicyRequest, opts ...grpc.CallOption) (*commonpb.Status, error)
+	ListRowPolicies(ctx context.Context, in *ListRowPoliciesRequest, opts ...grpc.CallOption) (*ListRowPoliciesResponse, error)
 }
 
 type milvusServiceClient struct {
@@ -284,6 +309,15 @@ func (c *milvusServiceClient) ReleaseCollection(ctx context.Context, in *Release
 func (c *milvusServiceClient) DescribeCollection(ctx context.Context, in *DescribeCollectionRequest, opts ...grpc.CallOption) (*DescribeCollectionResponse, error) {
 	out := new(DescribeCollectionResponse)
 	err := c.cc.Invoke(ctx, MilvusService_DescribeCollection_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) BatchDescribeCollection(ctx context.Context, in *BatchDescribeCollectionRequest, opts ...grpc.CallOption) (*BatchDescribeCollectionResponse, error) {
+	out := new(BatchDescribeCollectionResponse)
+	err := c.cc.Invoke(ctx, MilvusService_BatchDescribeCollection_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -592,6 +626,15 @@ func (c *milvusServiceClient) CalcDistance(ctx context.Context, in *CalcDistance
 func (c *milvusServiceClient) FlushAll(ctx context.Context, in *FlushAllRequest, opts ...grpc.CallOption) (*FlushAllResponse, error) {
 	out := new(FlushAllResponse)
 	err := c.cc.Invoke(ctx, MilvusService_FlushAll_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) AddCollectionField(ctx context.Context, in *AddCollectionFieldRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	out := new(commonpb.Status)
+	err := c.cc.Invoke(ctx, MilvusService_AddCollectionField_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1093,6 +1136,96 @@ func (c *milvusServiceClient) RunAnalyzer(ctx context.Context, in *RunAnalyzerRe
 	return out, nil
 }
 
+func (c *milvusServiceClient) AddFileResource(ctx context.Context, in *AddFileResourceRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	out := new(commonpb.Status)
+	err := c.cc.Invoke(ctx, MilvusService_AddFileResource_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) RemoveFileResource(ctx context.Context, in *RemoveFileResourceRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	out := new(commonpb.Status)
+	err := c.cc.Invoke(ctx, MilvusService_RemoveFileResource_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) ListFileResources(ctx context.Context, in *ListFileResourcesRequest, opts ...grpc.CallOption) (*ListFileResourcesResponse, error) {
+	out := new(ListFileResourcesResponse)
+	err := c.cc.Invoke(ctx, MilvusService_ListFileResources_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) AddUserTags(ctx context.Context, in *AddUserTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	out := new(commonpb.Status)
+	err := c.cc.Invoke(ctx, MilvusService_AddUserTags_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) DeleteUserTags(ctx context.Context, in *DeleteUserTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	out := new(commonpb.Status)
+	err := c.cc.Invoke(ctx, MilvusService_DeleteUserTags_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) GetUserTags(ctx context.Context, in *GetUserTagsRequest, opts ...grpc.CallOption) (*GetUserTagsResponse, error) {
+	out := new(GetUserTagsResponse)
+	err := c.cc.Invoke(ctx, MilvusService_GetUserTags_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) ListUsersWithTag(ctx context.Context, in *ListUsersWithTagRequest, opts ...grpc.CallOption) (*ListUsersWithTagResponse, error) {
+	out := new(ListUsersWithTagResponse)
+	err := c.cc.Invoke(ctx, MilvusService_ListUsersWithTag_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) CreateRowPolicy(ctx context.Context, in *CreateRowPolicyRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	out := new(commonpb.Status)
+	err := c.cc.Invoke(ctx, MilvusService_CreateRowPolicy_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) DropRowPolicy(ctx context.Context, in *DropRowPolicyRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	out := new(commonpb.Status)
+	err := c.cc.Invoke(ctx, MilvusService_DropRowPolicy_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *milvusServiceClient) ListRowPolicies(ctx context.Context, in *ListRowPoliciesRequest, opts ...grpc.CallOption) (*ListRowPoliciesResponse, error) {
+	out := new(ListRowPoliciesResponse)
+	err := c.cc.Invoke(ctx, MilvusService_ListRowPolicies_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MilvusServiceServer is the server API for MilvusService service.
 // All implementations should embed UnimplementedMilvusServiceServer
 // for forward compatibility
@@ -1103,6 +1236,7 @@ type MilvusServiceServer interface {
 	LoadCollection(context.Context, *LoadCollectionRequest) (*commonpb.Status, error)
 	ReleaseCollection(context.Context, *ReleaseCollectionRequest) (*commonpb.Status, error)
 	DescribeCollection(context.Context, *DescribeCollectionRequest) (*DescribeCollectionResponse, error)
+	BatchDescribeCollection(context.Context, *BatchDescribeCollectionRequest) (*BatchDescribeCollectionResponse, error)
 	GetCollectionStatistics(context.Context, *GetCollectionStatisticsRequest) (*GetCollectionStatisticsResponse, error)
 	ShowCollections(context.Context, *ShowCollectionsRequest) (*ShowCollectionsResponse, error)
 	AlterCollection(context.Context, *AlterCollectionRequest) (*commonpb.Status, error)
@@ -1141,6 +1275,7 @@ type MilvusServiceServer interface {
 	Query(context.Context, *QueryRequest) (*QueryResults, error)
 	CalcDistance(context.Context, *CalcDistanceRequest) (*CalcDistanceResults, error)
 	FlushAll(context.Context, *FlushAllRequest) (*FlushAllResponse, error)
+	AddCollectionField(context.Context, *AddCollectionFieldRequest) (*commonpb.Status, error)
 	GetFlushState(context.Context, *GetFlushStateRequest) (*GetFlushStateResponse, error)
 	GetFlushAllState(context.Context, *GetFlushAllStateRequest) (*GetFlushAllStateResponse, error)
 	GetPersistentSegmentInfo(context.Context, *GetPersistentSegmentInfoRequest) (*GetPersistentSegmentInfoResponse, error)
@@ -1201,6 +1336,17 @@ type MilvusServiceServer interface {
 	ListPrivilegeGroups(context.Context, *ListPrivilegeGroupsRequest) (*ListPrivilegeGroupsResponse, error)
 	OperatePrivilegeGroup(context.Context, *OperatePrivilegeGroupRequest) (*commonpb.Status, error)
 	RunAnalyzer(context.Context, *RunAnalyzerRequest) (*RunAnalyzerResponse, error)
+	AddFileResource(context.Context, *AddFileResourceRequest) (*commonpb.Status, error)
+	RemoveFileResource(context.Context, *RemoveFileResourceRequest) (*commonpb.Status, error)
+	ListFileResources(context.Context, *ListFileResourcesRequest) (*ListFileResourcesResponse, error)
+	// Row Level Security (RLS) APIs
+	AddUserTags(context.Context, *AddUserTagsRequest) (*commonpb.Status, error)
+	DeleteUserTags(context.Context, *DeleteUserTagsRequest) (*commonpb.Status, error)
+	GetUserTags(context.Context, *GetUserTagsRequest) (*GetUserTagsResponse, error)
+	ListUsersWithTag(context.Context, *ListUsersWithTagRequest) (*ListUsersWithTagResponse, error)
+	CreateRowPolicy(context.Context, *CreateRowPolicyRequest) (*commonpb.Status, error)
+	DropRowPolicy(context.Context, *DropRowPolicyRequest) (*commonpb.Status, error)
+	ListRowPolicies(context.Context, *ListRowPoliciesRequest) (*ListRowPoliciesResponse, error)
 }
 
 // UnimplementedMilvusServiceServer should be embedded to have forward compatible implementations.
@@ -1224,6 +1370,9 @@ func (UnimplementedMilvusServiceServer) ReleaseCollection(context.Context, *Rele
 }
 func (UnimplementedMilvusServiceServer) DescribeCollection(context.Context, *DescribeCollectionRequest) (*DescribeCollectionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DescribeCollection not implemented")
+}
+func (UnimplementedMilvusServiceServer) BatchDescribeCollection(context.Context, *BatchDescribeCollectionRequest) (*BatchDescribeCollectionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchDescribeCollection not implemented")
 }
 func (UnimplementedMilvusServiceServer) GetCollectionStatistics(context.Context, *GetCollectionStatisticsRequest) (*GetCollectionStatisticsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetCollectionStatistics not implemented")
@@ -1326,6 +1475,9 @@ func (UnimplementedMilvusServiceServer) CalcDistance(context.Context, *CalcDista
 }
 func (UnimplementedMilvusServiceServer) FlushAll(context.Context, *FlushAllRequest) (*FlushAllResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FlushAll not implemented")
+}
+func (UnimplementedMilvusServiceServer) AddCollectionField(context.Context, *AddCollectionFieldRequest) (*commonpb.Status, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddCollectionField not implemented")
 }
 func (UnimplementedMilvusServiceServer) GetFlushState(context.Context, *GetFlushStateRequest) (*GetFlushStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetFlushState not implemented")
@@ -1492,6 +1644,36 @@ func (UnimplementedMilvusServiceServer) OperatePrivilegeGroup(context.Context, *
 func (UnimplementedMilvusServiceServer) RunAnalyzer(context.Context, *RunAnalyzerRequest) (*RunAnalyzerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RunAnalyzer not implemented")
 }
+func (UnimplementedMilvusServiceServer) AddFileResource(context.Context, *AddFileResourceRequest) (*commonpb.Status, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddFileResource not implemented")
+}
+func (UnimplementedMilvusServiceServer) RemoveFileResource(context.Context, *RemoveFileResourceRequest) (*commonpb.Status, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveFileResource not implemented")
+}
+func (UnimplementedMilvusServiceServer) ListFileResources(context.Context, *ListFileResourcesRequest) (*ListFileResourcesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListFileResources not implemented")
+}
+func (UnimplementedMilvusServiceServer) AddUserTags(context.Context, *AddUserTagsRequest) (*commonpb.Status, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddUserTags not implemented")
+}
+func (UnimplementedMilvusServiceServer) DeleteUserTags(context.Context, *DeleteUserTagsRequest) (*commonpb.Status, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteUserTags not implemented")
+}
+func (UnimplementedMilvusServiceServer) GetUserTags(context.Context, *GetUserTagsRequest) (*GetUserTagsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetUserTags not implemented")
+}
+func (UnimplementedMilvusServiceServer) ListUsersWithTag(context.Context, *ListUsersWithTagRequest) (*ListUsersWithTagResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListUsersWithTag not implemented")
+}
+func (UnimplementedMilvusServiceServer) CreateRowPolicy(context.Context, *CreateRowPolicyRequest) (*commonpb.Status, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateRowPolicy not implemented")
+}
+func (UnimplementedMilvusServiceServer) DropRowPolicy(context.Context, *DropRowPolicyRequest) (*commonpb.Status, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DropRowPolicy not implemented")
+}
+func (UnimplementedMilvusServiceServer) ListRowPolicies(context.Context, *ListRowPoliciesRequest) (*ListRowPoliciesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListRowPolicies not implemented")
+}
 
 // UnsafeMilvusServiceServer may be embedded to opt out of forward compatibility for this service.
 // Use of this interface is not recommended, as added methods to MilvusServiceServer will
@@ -1608,6 +1790,24 @@ func _MilvusService_DescribeCollection_Handler(srv interface{}, ctx context.Cont
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MilvusServiceServer).DescribeCollection(ctx, req.(*DescribeCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_BatchDescribeCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchDescribeCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).BatchDescribeCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_BatchDescribeCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).BatchDescribeCollection(ctx, req.(*BatchDescribeCollectionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2220,6 +2420,24 @@ func _MilvusService_FlushAll_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MilvusServiceServer).FlushAll(ctx, req.(*FlushAllRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_AddCollectionField_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddCollectionFieldRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).AddCollectionField(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_AddCollectionField_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).AddCollectionField(ctx, req.(*AddCollectionFieldRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3214,6 +3432,186 @@ func _MilvusService_RunAnalyzer_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MilvusService_AddFileResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddFileResourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).AddFileResource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_AddFileResource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).AddFileResource(ctx, req.(*AddFileResourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_RemoveFileResource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveFileResourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).RemoveFileResource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_RemoveFileResource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).RemoveFileResource(ctx, req.(*RemoveFileResourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_ListFileResources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListFileResourcesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).ListFileResources(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_ListFileResources_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).ListFileResources(ctx, req.(*ListFileResourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_AddUserTags_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddUserTagsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).AddUserTags(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_AddUserTags_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).AddUserTags(ctx, req.(*AddUserTagsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_DeleteUserTags_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteUserTagsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).DeleteUserTags(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_DeleteUserTags_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).DeleteUserTags(ctx, req.(*DeleteUserTagsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_GetUserTags_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetUserTagsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).GetUserTags(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_GetUserTags_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).GetUserTags(ctx, req.(*GetUserTagsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_ListUsersWithTag_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListUsersWithTagRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).ListUsersWithTag(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_ListUsersWithTag_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).ListUsersWithTag(ctx, req.(*ListUsersWithTagRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_CreateRowPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateRowPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).CreateRowPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_CreateRowPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).CreateRowPolicy(ctx, req.(*CreateRowPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_DropRowPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DropRowPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).DropRowPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_DropRowPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).DropRowPolicy(ctx, req.(*DropRowPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MilvusService_ListRowPolicies_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRowPoliciesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MilvusServiceServer).ListRowPolicies(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MilvusService_ListRowPolicies_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MilvusServiceServer).ListRowPolicies(ctx, req.(*ListRowPoliciesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MilvusService_ServiceDesc is the grpc.ServiceDesc for MilvusService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3244,6 +3642,10 @@ var MilvusService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DescribeCollection",
 			Handler:    _MilvusService_DescribeCollection_Handler,
+		},
+		{
+			MethodName: "BatchDescribeCollection",
+			Handler:    _MilvusService_BatchDescribeCollection_Handler,
 		},
 		{
 			MethodName: "GetCollectionStatistics",
@@ -3380,6 +3782,10 @@ var MilvusService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FlushAll",
 			Handler:    _MilvusService_FlushAll_Handler,
+		},
+		{
+			MethodName: "AddCollectionField",
+			Handler:    _MilvusService_AddCollectionField_Handler,
 		},
 		{
 			MethodName: "GetFlushState",
@@ -3600,6 +4006,46 @@ var MilvusService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunAnalyzer",
 			Handler:    _MilvusService_RunAnalyzer_Handler,
+		},
+		{
+			MethodName: "AddFileResource",
+			Handler:    _MilvusService_AddFileResource_Handler,
+		},
+		{
+			MethodName: "RemoveFileResource",
+			Handler:    _MilvusService_RemoveFileResource_Handler,
+		},
+		{
+			MethodName: "ListFileResources",
+			Handler:    _MilvusService_ListFileResources_Handler,
+		},
+		{
+			MethodName: "AddUserTags",
+			Handler:    _MilvusService_AddUserTags_Handler,
+		},
+		{
+			MethodName: "DeleteUserTags",
+			Handler:    _MilvusService_DeleteUserTags_Handler,
+		},
+		{
+			MethodName: "GetUserTags",
+			Handler:    _MilvusService_GetUserTags_Handler,
+		},
+		{
+			MethodName: "ListUsersWithTag",
+			Handler:    _MilvusService_ListUsersWithTag_Handler,
+		},
+		{
+			MethodName: "CreateRowPolicy",
+			Handler:    _MilvusService_CreateRowPolicy_Handler,
+		},
+		{
+			MethodName: "DropRowPolicy",
+			Handler:    _MilvusService_DropRowPolicy_Handler,
+		},
+		{
+			MethodName: "ListRowPolicies",
+			Handler:    _MilvusService_ListRowPolicies_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

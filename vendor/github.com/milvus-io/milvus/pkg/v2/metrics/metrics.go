@@ -78,11 +78,12 @@ const (
 	Executing = "executing"
 	Done      = "done"
 
-	ImportStagePending    = "pending"
-	ImportStagePreImport  = "preimport"
-	ImportStageImport     = "import"
-	ImportStageStats      = "stats"
-	ImportStageBuildIndex = "build_index"
+	ImportStagePending      = "pending"
+	ImportStagePreImport    = "preimport"
+	ImportStageImport       = "import"
+	ImportStageStats        = "stats"
+	ImportStageBuildIndex   = "build_index"
+	ImportStageWaitL0Import = "wait_l0_import"
 
 	compactionTypeLabelName  = "compaction_type"
 	isVectorFieldLabelName   = "is_vector_field"
@@ -94,6 +95,7 @@ const (
 	indexTaskStatusLabelName = "index_task_status"
 	msgTypeLabelName         = "msg_type"
 	collectionIDLabelName    = "collection_id"
+	fieldIDLabelName         = "field_id"
 	channelNameLabelName     = "channel_name"
 	functionLabelName        = "function_name"
 	queryTypeLabelName       = "query_type"
@@ -125,6 +127,11 @@ const (
 	cgoNameLabelName         = `cgo_name`
 	cgoTypeLabelName         = `cgo_type`
 	queueTypeLabelName       = `queue_type`
+
+	// model function/UDF labels
+	functionTypeName = "function_type_name"
+	functionProvider = "function_provider"
+	functionName     = "function_name"
 
 	// entities label
 	LoadedLabel         = "loaded"

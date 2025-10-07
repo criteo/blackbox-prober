@@ -237,3 +237,7 @@ func (c *Client) callService(fn func(milvusService milvuspb.MilvusServiceClient)
 
 	return fn(c.service)
 }
+
+func (c *Client) GetService() milvuspb.MilvusServiceClient {
+	return c.service
+}

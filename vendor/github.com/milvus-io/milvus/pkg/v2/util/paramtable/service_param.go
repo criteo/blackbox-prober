@@ -46,10 +46,10 @@ type ServiceParam struct {
 	EtcdCfg         EtcdConfig
 	TiKVCfg         TiKVConfig
 	MQCfg           MQConfig
+	WoodpeckerCfg   WoodpeckerConfig
 	PulsarCfg       PulsarConfig
 	KafkaCfg        KafkaConfig
 	RocksmqCfg      RocksmqConfig
-	NatsmqCfg       NatsmqConfig
 	MinioCfg        MinioConfig
 	ProfileCfg      ProfileConfig
 }
@@ -60,10 +60,10 @@ func (p *ServiceParam) init(bt *BaseTable) {
 	p.EtcdCfg.Init(bt)
 	p.TiKVCfg.Init(bt)
 	p.MQCfg.Init(bt)
+	p.WoodpeckerCfg.Init(bt)
 	p.PulsarCfg.Init(bt)
 	p.KafkaCfg.Init(bt)
 	p.RocksmqCfg.Init(bt)
-	p.NatsmqCfg.Init(bt)
 	p.MinioCfg.Init(bt)
 	p.ProfileCfg.Init(bt)
 }
@@ -72,17 +72,16 @@ func (p *ServiceParam) RocksmqEnable() bool {
 	return p.RocksmqCfg.Path.GetValue() != ""
 }
 
-// NatsmqEnable checks if NATS messaging queue is enabled.
-func (p *ServiceParam) NatsmqEnable() bool {
-	return p.NatsmqCfg.ServerStoreDir.GetValue() != ""
-}
-
 func (p *ServiceParam) PulsarEnable() bool {
 	return p.PulsarCfg.Address.GetValue() != ""
 }
 
 func (p *ServiceParam) KafkaEnable() bool {
 	return p.KafkaCfg.Address.GetValue() != ""
+}
+
+func (p *ServiceParam) WoodpeckerEnable() bool {
+	return p.WoodpeckerCfg.MetaPrefix.GetValue() != ""
 }
 
 // /////////////////////////////////////////////////////////////////////////////
@@ -315,6 +314,22 @@ We recommend using version 1.2 and above.`,
 	p.EtcdAuthPassword.Init(base.mgr)
 }
 
+func (p *EtcdConfig) GetAll() map[string]string {
+	return map[string]string{
+		"etcd.endpoints":         p.Endpoints.GetValue(),
+		"etcd.metaRootPath":      p.MetaRootPath.GetValue(),
+		"etcd.ssl.enabled":       p.EtcdUseSSL.GetValue(),
+		"etcd.ssl.tlsCert":       p.EtcdTLSCert.GetValue(),
+		"etcd.ssl.tlsKey":        p.EtcdTLSKey.GetValue(),
+		"etcd.ssl.tlsCACert":     p.EtcdTLSCACert.GetValue(),
+		"etcd.ssl.tlsMinVersion": p.EtcdTLSMinVersion.GetValue(),
+		"etcd.requestTimeout":    p.RequestTimeout.GetValue(),
+		"etcd.auth.enabled":      p.EtcdEnableAuth.GetValue(),
+		"etcd.auth.userName":     p.EtcdAuthUserName.GetValue(),
+		"etcd.auth.password":     p.EtcdAuthPassword.GetValue(),
+	}
+}
+
 // /////////////////////////////////////////////////////////////////////////////
 // --- tikv ---
 type TiKVConfig struct {
@@ -529,12 +544,10 @@ type MQConfig struct {
 	IgnoreBadPosition ParamItem `refreshable:"true"`
 
 	// msgdispatcher
-	MergeCheckInterval          ParamItem `refreshable:"false"`
-	TargetBufSize               ParamItem `refreshable:"false"`
-	MaxTolerantLag              ParamItem `refreshable:"true"`
-	MaxDispatcherNumPerPchannel ParamItem `refreshable:"true"`
-	RetrySleep                  ParamItem `refreshable:"true"`
-	RetryTimeout                ParamItem `refreshable:"true"`
+	CheckInterval    ParamItem `refreshable:"false"`
+	TargetBufSize    ParamItem `refreshable:"false"`
+	MaxTolerantLag   ParamItem `refreshable:"true"`
+	MaxPositionTsGap ParamItem `refreshable:"true"`
 }
 
 // Init initializes the MQConfig object with a BaseTable.
@@ -544,7 +557,7 @@ func (p *MQConfig) Init(base *BaseTable) {
 		Version:      "2.3.0",
 		DefaultValue: "default",
 		Doc: `Default value: "default"
-Valid values: [default, pulsar, kafka, rocksmq, natsmq]`,
+Valid values: [default, pulsar, kafka, rocksmq, woodpecker]`,
 		Export: true,
 	}
 	p.Type.Init(base.mgr)
@@ -558,33 +571,6 @@ Valid values: [default, pulsar, kafka, rocksmq, natsmq]`,
 	}
 	p.MaxTolerantLag.Init(base.mgr)
 
-	p.MaxDispatcherNumPerPchannel = ParamItem{
-		Key:          "mq.dispatcher.maxDispatcherNumPerPchannel",
-		Version:      "2.4.19",
-		DefaultValue: "5",
-		Doc:          `The maximum number of dispatchers per physical channel, primarily to limit the number of consumers and prevent performance issues(e.g., during recovery when a large number of channels are watched).`,
-		Export:       true,
-	}
-	p.MaxDispatcherNumPerPchannel.Init(base.mgr)
-
-	p.RetrySleep = ParamItem{
-		Key:          "mq.dispatcher.retrySleep",
-		Version:      "2.4.19",
-		DefaultValue: "3",
-		Doc:          `register retry sleep time in seconds`,
-		Export:       true,
-	}
-	p.RetrySleep.Init(base.mgr)
-
-	p.RetryTimeout = ParamItem{
-		Key:          "mq.dispatcher.retryTimeout",
-		Version:      "2.4.19",
-		DefaultValue: "60",
-		Doc:          `register retry timeout in seconds`,
-		Export:       true,
-	}
-	p.RetryTimeout.Init(base.mgr)
-
 	p.TargetBufSize = ParamItem{
 		Key:          "mq.dispatcher.targetBufSize",
 		Version:      "2.4.4",
@@ -594,14 +580,22 @@ Valid values: [default, pulsar, kafka, rocksmq, natsmq]`,
 	}
 	p.TargetBufSize.Init(base.mgr)
 
-	p.MergeCheckInterval = ParamItem{
+	p.CheckInterval = ParamItem{
 		Key:          "mq.dispatcher.mergeCheckInterval",
 		Version:      "2.4.4",
-		DefaultValue: "1",
+		DefaultValue: "0.1",
 		Doc:          `the interval time(in seconds) for dispatcher to check whether to merge`,
 		Export:       true,
 	}
-	p.MergeCheckInterval.Init(base.mgr)
+	p.CheckInterval.Init(base.mgr)
+
+	p.MaxPositionTsGap = ParamItem{
+		Key:          "mq.dispatcher.maxPositionGapInMinutes",
+		Version:      "2.5",
+		DefaultValue: "60",
+		Doc:          `The max position timestamp gap in minutes.`,
+	}
+	p.MaxPositionTsGap.Init(base.mgr)
 
 	p.EnablePursuitMode = ParamItem{
 		Key:          "mq.enablePursuitMode",
@@ -666,6 +660,250 @@ Valid values: [default, pulsar, kafka, rocksmq, natsmq]`,
 }
 
 // /////////////////////////////////////////////////////////////////////////////
+// --- woodpecker ---
+type WoodpeckerConfig struct {
+	// meta
+	MetaType   ParamItem `refreshable:"false"`
+	MetaPrefix ParamItem `refreshable:"false"`
+
+	// client
+	AppendQueueSize         ParamItem `refreshable:"true"`
+	AppendMaxRetries        ParamItem `refreshable:"true"`
+	SegmentRollingMaxSize   ParamItem `refreshable:"true"`
+	SegmentRollingMaxTime   ParamItem `refreshable:"true"`
+	SegmentRollingMaxBlocks ParamItem `refreshable:"true"`
+	AuditorMaxInterval      ParamItem `refreshable:"true"`
+
+	// logstore
+	SyncMaxInterval                ParamItem `refreshable:"true"`
+	SyncMaxIntervalForLocalStorage ParamItem `refreshable:"true"`
+	SyncMaxBytes                   ParamItem `refreshable:"true"`
+	SyncMaxEntries                 ParamItem `refreshable:"true"`
+	FlushMaxRetries                ParamItem `refreshable:"true"`
+	RetryInterval                  ParamItem `refreshable:"true"`
+	FlushMaxSize                   ParamItem `refreshable:"true"`
+	FlushMaxThreads                ParamItem `refreshable:"true"`
+	CompactionSize                 ParamItem `refreshable:"true"`
+	CompactionMaxParallelUploads   ParamItem `refreshable:"true"`
+	CompactionMaxParallelReads     ParamItem `refreshable:"true"`
+	ReaderMaxBatchSize             ParamItem `refreshable:"true"`
+	ReaderMaxFetchThreads          ParamItem `refreshable:"true"`
+
+	// storage
+	StorageType ParamItem `refreshable:"false"`
+	RootPath    ParamItem `refreshable:"false"`
+}
+
+func (p *WoodpeckerConfig) Init(base *BaseTable) {
+	p.MetaType = ParamItem{
+		Key:          "woodpecker.meta.type",
+		Version:      "2.6.0",
+		DefaultValue: "etcd",
+		Doc:          "The Type of the metadata provider. currently only support etcd.",
+		Export:       true,
+	}
+	p.MetaType.Init(base.mgr)
+
+	p.MetaPrefix = ParamItem{
+		Key:          "woodpecker.meta.prefix",
+		Version:      "2.6.0",
+		DefaultValue: "woodpecker",
+		Doc:          "The Prefix of the metadata provider. default is woodpecker.",
+		Export:       true,
+	}
+	p.MetaPrefix.Init(base.mgr)
+
+	p.AppendQueueSize = ParamItem{
+		Key:          "woodpecker.client.segmentAppend.queueSize",
+		Version:      "2.6.0",
+		DefaultValue: "10000",
+		Doc:          "The size of the queue for pending messages to be sent of each log.",
+		Export:       true,
+	}
+	p.AppendQueueSize.Init(base.mgr)
+
+	p.AppendMaxRetries = ParamItem{
+		Key:          "woodpecker.client.segmentAppend.maxRetries",
+		Version:      "2.6.0",
+		DefaultValue: "3",
+		Doc:          "Maximum number of retries for segment append operations.",
+		Export:       true,
+	}
+	p.AppendMaxRetries.Init(base.mgr)
+
+	p.SegmentRollingMaxSize = ParamItem{
+		Key:          "woodpecker.client.segmentRollingPolicy.maxSize",
+		Version:      "2.6.0",
+		DefaultValue: "256M",
+		Doc:          "Maximum size of a segment.",
+		Export:       true,
+	}
+	p.SegmentRollingMaxSize.Init(base.mgr)
+
+	p.SegmentRollingMaxTime = ParamItem{
+		Key:          "woodpecker.client.segmentRollingPolicy.maxInterval",
+		Version:      "2.6.0",
+		DefaultValue: "10m",
+		Doc:          "Maximum interval between two segments, default is 10 minutes.",
+		Export:       true,
+	}
+	p.SegmentRollingMaxTime.Init(base.mgr)
+
+	p.SegmentRollingMaxBlocks = ParamItem{
+		Key:          "woodpecker.client.segmentRollingPolicy.maxBlocks",
+		Version:      "2.6.0",
+		DefaultValue: "1000",
+		Doc:          "Maximum number of blocks in a segment",
+		Export:       true,
+	}
+	p.SegmentRollingMaxBlocks.Init(base.mgr)
+
+	p.AuditorMaxInterval = ParamItem{
+		Key:          "woodpecker.client.auditor.maxInterval",
+		Version:      "2.6.0",
+		DefaultValue: "10s",
+		Doc:          "Maximum interval between two auditing operations, default is 10 seconds.",
+		Export:       true,
+	}
+	p.AuditorMaxInterval.Init(base.mgr)
+
+	p.SyncMaxInterval = ParamItem{
+		Key:          "woodpecker.logstore.segmentSyncPolicy.maxInterval",
+		Version:      "2.6.0",
+		DefaultValue: "200ms",
+		Doc:          "Maximum interval between two sync operations, default is 200 milliseconds.",
+		Export:       true,
+	}
+	p.SyncMaxInterval.Init(base.mgr)
+
+	p.SyncMaxIntervalForLocalStorage = ParamItem{
+		Key:          "woodpecker.logstore.segmentSyncPolicy.maxIntervalForLocalStorage",
+		Version:      "2.6.0",
+		DefaultValue: "10ms",
+		Doc:          "Maximum interval between two sync operations local storage backend, default is 10 milliseconds.",
+		Export:       true,
+	}
+	p.SyncMaxIntervalForLocalStorage.Init(base.mgr)
+
+	p.SyncMaxEntries = ParamItem{
+		Key:          "woodpecker.logstore.segmentSyncPolicy.maxEntries",
+		Version:      "2.6.0",
+		DefaultValue: "10000",
+		Doc:          "Maximum entries number of write buffer.",
+		Export:       true,
+	}
+	p.SyncMaxEntries.Init(base.mgr)
+
+	p.SyncMaxBytes = ParamItem{
+		Key:          "woodpecker.logstore.segmentSyncPolicy.maxBytes",
+		Version:      "2.6.0",
+		DefaultValue: "256M",
+		Doc:          "Maximum size of write buffer in bytes.",
+		Export:       true,
+	}
+	p.SyncMaxBytes.Init(base.mgr)
+
+	p.FlushMaxRetries = ParamItem{
+		Key:          "woodpecker.logstore.segmentSyncPolicy.maxFlushRetries",
+		Version:      "2.6.0",
+		DefaultValue: "5",
+		Doc:          "Maximum size of write buffer in bytes.",
+		Export:       true,
+	}
+	p.FlushMaxRetries.Init(base.mgr)
+
+	p.FlushMaxSize = ParamItem{
+		Key:          "woodpecker.logstore.segmentSyncPolicy.maxFlushSize",
+		Version:      "2.6.0",
+		DefaultValue: "2M",
+		Doc:          "Maximum size of a fragment in bytes to flush.",
+		Export:       true,
+	}
+	p.FlushMaxSize.Init(base.mgr)
+
+	p.RetryInterval = ParamItem{
+		Key:          "woodpecker.logstore.segmentSyncPolicy.retryInterval",
+		Version:      "2.6.0",
+		DefaultValue: "1000ms",
+		Doc:          "Maximum interval between two retries. default is 1000 milliseconds.",
+		Export:       true,
+	}
+	p.RetryInterval.Init(base.mgr)
+
+	p.FlushMaxThreads = ParamItem{
+		Key:          "woodpecker.logstore.segmentSyncPolicy.maxFlushThreads",
+		Version:      "2.6.0",
+		DefaultValue: "32",
+		Doc:          "Maximum number of threads to flush data",
+		Export:       true,
+	}
+	p.FlushMaxThreads.Init(base.mgr)
+
+	p.CompactionSize = ParamItem{
+		Key:          "woodpecker.logstore.segmentCompactionPolicy.maxSize",
+		Version:      "2.6.0",
+		DefaultValue: "2M",
+		Doc:          "The maximum size of the merged files.",
+		Export:       true,
+	}
+	p.CompactionSize.Init(base.mgr)
+
+	p.CompactionMaxParallelUploads = ParamItem{
+		Key:          "woodpecker.logstore.segmentCompactionPolicy.maxParallelUploads",
+		Version:      "2.6.0",
+		DefaultValue: "4",
+		Doc:          "The maximum number of parallel upload threads for compaction.",
+		Export:       true,
+	}
+	p.CompactionMaxParallelUploads.Init(base.mgr)
+
+	p.CompactionMaxParallelReads = ParamItem{
+		Key:          "woodpecker.logstore.segmentCompactionPolicy.maxParallelReads",
+		Version:      "2.6.0",
+		DefaultValue: "8",
+		Doc:          "The maximum number of parallel read threads for compaction.",
+		Export:       true,
+	}
+	p.CompactionMaxParallelReads.Init(base.mgr)
+
+	p.ReaderMaxBatchSize = ParamItem{
+		Key:          "woodpecker.logstore.segmentReadPolicy.maxBatchSize",
+		Version:      "2.6.0",
+		DefaultValue: "16M",
+		Doc:          "Maximum size of a batch in bytes.",
+		Export:       true,
+	}
+	p.ReaderMaxBatchSize.Init(base.mgr)
+
+	p.ReaderMaxFetchThreads = ParamItem{
+		Key:          "woodpecker.logstore.segmentReadPolicy.maxFetchThreads",
+		Version:      "2.6.0",
+		DefaultValue: "32",
+		Doc:          "Maximum number of threads to fetch data.",
+		Export:       true,
+	}
+	p.ReaderMaxFetchThreads.Init(base.mgr)
+
+	p.StorageType = ParamItem{
+		Key:          "woodpecker.storage.type",
+		Version:      "2.6.0",
+		DefaultValue: "minio",
+		Doc:          "The Type of the storage provider. Valid values: [minio, local]",
+		Export:       true,
+	}
+	p.StorageType.Init(base.mgr)
+
+	p.RootPath = ParamItem{
+		Key:          "woodpecker.storage.rootPath",
+		Version:      "2.6.0",
+		DefaultValue: "/var/lib/milvus/woodpecker",
+		Doc:          "The root path of the storage provider.",
+		Export:       true,
+	}
+	p.RootPath.Init(base.mgr)
+}
+
+// /////////////////////////////////////////////////////////////////////////////
 // --- pulsar ---
 type PulsarConfig struct {
 	Address        ParamItem `refreshable:"false"`
@@ -687,6 +925,8 @@ type PulsarConfig struct {
 
 	// Enable Client side metrics
 	EnableClientMetrics ParamItem `refreshable:"false"`
+
+	BacklogAutoClearBytes ParamItem `refreshable:"false"`
 }
 
 func (p *PulsarConfig) Init(base *BaseTable) {
@@ -819,6 +1059,23 @@ To share a Pulsar instance among multiple Milvus instances, you can change this 
 		Export:       true,
 	}
 	p.EnableClientMetrics.Init(base.mgr)
+
+	p.BacklogAutoClearBytes = ParamItem{
+		Key:          "pulsar.backlogAutoClearBytes",
+		Version:      "2.6.0",
+		DefaultValue: "100m",
+		Doc: `Perform a backlog cleanup every time the data of given bytes is written.
+Because milvus use puslar reader to read the message, so if there's no pulsar subscriber when milvus running.
+If the pulsar cluster open the backlog protection (backlogQuotaDefaultLimitBytes), the backlog exceed will reported to fail the write operation
+set this option to non-zero will create a subscription seek to latest position to clear the pulsar backlog. 
+If these options is non-zero, the wal data in pulsar is fully protected by retention policy, 
+so admin of pulsar should give enough retention time to avoid the wal message lost.
+If these options is zero, no subscription will be created, so pulsar cluster must close the backlog protection, otherwise the milvus can not recovered if backlog exceed.
+Moreover, if these option is zero, Milvus use a truncation subscriber to protect the wal data in pulsar if user disable the subscriptionExpirationTimeMinutes.
+The retention policy of pulsar can set shorter to save the storage space in this case.`,
+		Export: true,
+	}
+	p.BacklogAutoClearBytes.Init(base.mgr)
 }
 
 // --- kafka ---
@@ -1035,141 +1292,6 @@ Set an easy-to-identify root key prefix for Milvus if etcd service already exist
 		Export:       true,
 	}
 	r.CompressionTypes.Init(base.mgr)
-}
-
-// NatsmqConfig describes the configuration options for the Nats message queue
-type NatsmqConfig struct {
-	ServerPort                ParamItem `refreshable:"false"`
-	ServerStoreDir            ParamItem `refreshable:"false"`
-	ServerMaxFileStore        ParamItem `refreshable:"false"`
-	ServerMaxPayload          ParamItem `refreshable:"false"`
-	ServerMaxPending          ParamItem `refreshable:"false"`
-	ServerInitializeTimeout   ParamItem `refreshable:"false"`
-	ServerMonitorTrace        ParamItem `refreshable:"false"`
-	ServerMonitorDebug        ParamItem `refreshable:"false"`
-	ServerMonitorLogTime      ParamItem `refreshable:"false"`
-	ServerMonitorLogFile      ParamItem `refreshable:"false"`
-	ServerMonitorLogSizeLimit ParamItem `refreshable:"false"`
-	ServerRetentionMaxAge     ParamItem `refreshable:"true"`
-	ServerRetentionMaxBytes   ParamItem `refreshable:"true"`
-	ServerRetentionMaxMsgs    ParamItem `refreshable:"true"`
-}
-
-// Init sets up a new NatsmqConfig instance using the provided BaseTable
-func (r *NatsmqConfig) Init(base *BaseTable) {
-	r.ServerPort = ParamItem{
-		Key:          "natsmq.server.port",
-		Version:      "2.3.0",
-		DefaultValue: "4222",
-		Doc:          "Listening port of the NATS server.",
-		Export:       true,
-	}
-	r.ServerPort.Init(base.mgr)
-	r.ServerStoreDir = ParamItem{
-		Key:          "natsmq.server.storeDir",
-		DefaultValue: "/var/lib/milvus/nats",
-		Version:      "2.3.0",
-		Doc:          `Directory to use for JetStream storage of nats`,
-		Export:       true,
-	}
-	r.ServerStoreDir.Init(base.mgr)
-	r.ServerMaxFileStore = ParamItem{
-		Key:          "natsmq.server.maxFileStore",
-		Version:      "2.3.0",
-		DefaultValue: "17179869184",
-		Doc:          `Maximum size of the 'file' storage`,
-		Export:       true,
-	}
-	r.ServerMaxFileStore.Init(base.mgr)
-	r.ServerMaxPayload = ParamItem{
-		Key:          "natsmq.server.maxPayload",
-		Version:      "2.3.0",
-		DefaultValue: "8388608",
-		Doc:          `Maximum number of bytes in a message payload`,
-		Export:       true,
-	}
-	r.ServerMaxPayload.Init(base.mgr)
-	r.ServerMaxPending = ParamItem{
-		Key:          "natsmq.server.maxPending",
-		Version:      "2.3.0",
-		DefaultValue: "67108864",
-		Doc:          `Maximum number of bytes buffered for a connection Applies to client connections`,
-		Export:       true,
-	}
-	r.ServerMaxPending.Init(base.mgr)
-	r.ServerInitializeTimeout = ParamItem{
-		Key:          "natsmq.server.initializeTimeout",
-		Version:      "2.3.0",
-		DefaultValue: "4000",
-		Doc:          `waiting for initialization of natsmq finished`,
-		Export:       true,
-	}
-	r.ServerInitializeTimeout.Init(base.mgr)
-	r.ServerMonitorTrace = ParamItem{
-		Key:          "natsmq.server.monitor.trace",
-		Version:      "2.3.0",
-		DefaultValue: "false",
-		Doc:          `If true enable protocol trace log messages`,
-		Export:       true,
-	}
-	r.ServerMonitorTrace.Init(base.mgr)
-	r.ServerMonitorDebug = ParamItem{
-		Key:          "natsmq.server.monitor.debug",
-		Version:      "2.3.0",
-		DefaultValue: "false",
-		Doc:          `If true enable debug log messages`,
-		Export:       true,
-	}
-	r.ServerMonitorDebug.Init(base.mgr)
-	r.ServerMonitorLogTime = ParamItem{
-		Key:          "natsmq.server.monitor.logTime",
-		Version:      "2.3.0",
-		DefaultValue: "true",
-		Doc:          `If set to false, log without timestamps.`,
-		Export:       true,
-	}
-	r.ServerMonitorLogTime.Init(base.mgr)
-	r.ServerMonitorLogFile = ParamItem{
-		Key:          "natsmq.server.monitor.logFile",
-		Version:      "2.3.0",
-		DefaultValue: "/tmp/milvus/logs/nats.log",
-		Doc:          `Log file path relative to .. of milvus binary if use relative path`,
-		Export:       true,
-	}
-	r.ServerMonitorLogFile.Init(base.mgr)
-	r.ServerMonitorLogSizeLimit = ParamItem{
-		Key:          "natsmq.server.monitor.logSizeLimit",
-		Version:      "2.3.0",
-		DefaultValue: "536870912",
-		Doc:          `Size in bytes after the log file rolls over to a new one`,
-		Export:       true,
-	}
-	r.ServerMonitorLogSizeLimit.Init(base.mgr)
-
-	r.ServerRetentionMaxAge = ParamItem{
-		Key:          "natsmq.server.retention.maxAge",
-		Version:      "2.3.0",
-		DefaultValue: "4320",
-		Doc:          `Maximum age of any message in the P-channel`,
-		Export:       true,
-	}
-	r.ServerRetentionMaxAge.Init(base.mgr)
-	r.ServerRetentionMaxBytes = ParamItem{
-		Key:          "natsmq.server.retention.maxBytes",
-		Version:      "2.3.0",
-		DefaultValue: "",
-		Doc:          `How many bytes the single P-channel may contain. Removing oldest messages if the P-channel exceeds this size`,
-		Export:       true,
-	}
-	r.ServerRetentionMaxBytes.Init(base.mgr)
-	r.ServerRetentionMaxMsgs = ParamItem{
-		Key:          "natsmq.server.retention.maxMsgs",
-		Version:      "2.3.0",
-		DefaultValue: "",
-		Doc:          `How many message the single P-channel may contain. Removing oldest messages if the P-channel exceeds this limit`,
-		Export:       true,
-	}
-	r.ServerRetentionMaxMsgs.Init(base.mgr)
 }
 
 // /////////////////////////////////////////////////////////////////////////////

@@ -63,7 +63,7 @@ func main() {
 	if config.MilvusChecksConfigs.LatencyCheckConfig.Enable {
 		p.RegisterNewClusterCheck(scheduler.Check{
 			Name:       "latency_check",
-			PrepareFn:  scheduler.Noop,
+			PrepareFn:  milvus.LatencyPrepare,
 			CheckFn:    milvus.LatencyCheck,
 			TeardownFn: scheduler.Noop,
 			Interval:   config.MilvusChecksConfigs.LatencyCheckConfig.Interval,

@@ -224,6 +224,7 @@ func (pw *ProberWorker) runAllPendingChecks(lastChecks []time.Time) time.Duratio
 }
 
 func (pw *ProberWorker) PrepareProbing() error {
+	//panic("hello")
 	for _, check := range pw.checks {
 		err := check.PrepareFn(pw.endpoint)
 		if err != nil {

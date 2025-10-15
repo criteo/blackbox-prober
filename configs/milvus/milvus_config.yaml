@@ -10,7 +10,9 @@ discovery:
     tags:
     - milvus-proxy
 client_config:
-  ### AUTH ### 
+  ### AUTH ###
+  # Enable authentication
+  auth_enabled: true
   # Env variable to use to retrieve the credentials
   username_env: "MILVUS_USERNAME"
   password_env: "MILVUS_PASSWORD"
@@ -18,7 +20,7 @@ client_config:
   # Tag to use in the discovery to determine wether or not the probe should connect to cluster in SSL
   tls_tag: "tls"
   # Address to connect meta key
-  address_meta_key: "address"
+  address_meta_key: "external_cluster_fqdn"
   ### Probe discovery configuration ###
   # The key prefix to discover milvus's databases through service discovery
   database_meta_key_prefix: "milvus-monitoring-"

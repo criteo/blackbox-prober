@@ -5,20 +5,7 @@ import (
 
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
-	mv "github.com/milvus-io/milvus/client/v2/milvusclient"
 )
-
-// Config used to configure the client of Milvus
-type MilvusClientConfig struct {
-	AuthEnabled    bool                     // Enable auth with user/pass for connection
-	Address        string                   // Remote address, "localhost:19530".
-	Username       string                   // Username for auth.
-	Password       string                   // Password for auth.
-	DBName         string                   // DBName for this client.
-	EnableTLSAuth  bool                     // Enable TLS Auth for transport security.
-	APIKey         string                   // API key
-	RetryRateLimit *mv.RetryRateLimitOption // option for retry on rate limit inteceptor
-}
 
 // Config used to configure the endpoint of Milvus
 type MilvusEndpointConfig struct {

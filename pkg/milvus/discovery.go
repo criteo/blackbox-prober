@@ -8,7 +8,7 @@ import (
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
-	"github.com/milvus-io/milvus/client/v2/milvusclient"
+	mv "github.com/milvus-io/milvus/client/v2/milvusclient"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -19,7 +19,7 @@ func (conf *MilvusProbeConfig) buildAddress(tlsEnabled bool, addressUrl string) 
 	if tlsEnabled {
 		proto = "https"
 	}
-	// Address like "https://milvus-milvuss99.da1.preprod.crto.in:19531"
+
 	return fmt.Sprintf("%s://%s", proto, addressUrl)
 }
 
@@ -62,16 +62,14 @@ func (conf *MilvusProbeConfig) generateClusterEndpointsFromEntry(logger log.Logg
 		Database:           conf.MilvusEndpointConfig.MonitoringSet,
 		MonitoringDatabase: conf.MilvusEndpointConfig.MonitoringSet,
 		ClusterLevel:       true,
-		Config: MilvusClientConfig{
+		Config: mv.ClientConfig{
 			// auth
-			AuthEnabled: authEnabled,
-			Username:    username,
-			Password:    password,
+			Username: username,
+			Password: password,
 			// tls
-			EnableTLSAuth: tlsEnabled,
-			Address:       address,
+			Address: address,
 			// conf
-			RetryRateLimit: &milvusclient.RetryRateLimitOption{
+			RetryRateLimit: &mv.RetryRateLimitOption{
 				MaxRetry:   conf.MilvusEndpointConfig.MaxRetry,
 				MaxBackoff: conf.MilvusEndpointConfig.MaxBackoff,
 			},
@@ -93,6 +91,8 @@ func (conf MilvusProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []dis
 			}
 
 			for _, endpoint := range endpoints {
+				level.Debug(logger).Log("msg", "Adding cluster", "cluster", endpoint.Name, "address", endpoint.Config.Address)
+
 				cluster := topology.NewCluster(endpoint)
 				clusterMap.AppendCluster(cluster)
 			}

@@ -3,6 +3,7 @@ package milvus
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log"
 
@@ -14,7 +15,7 @@ type MilvusEndpoint struct {
 	ClusterLevel bool
 	ClusterName  string
 	Client       *mv.Client
-	Config       MilvusClientConfig
+	Config       mv.ClientConfig
 	Logger       log.Logger
 	Database     string
 	// MonitoringDatabase is the database the probe manages (defaults to "monitoring")
@@ -34,17 +35,10 @@ func (e *MilvusEndpoint) IsCluster() bool {
 }
 
 func (e *MilvusEndpoint) Connect() error {
-	clientConfig := &mv.ClientConfig{
-		Address:        e.Config.Address,
-		DBName:         e.Config.DBName,
-		EnableTLSAuth:  e.Config.EnableTLSAuth,
-		APIKey:         e.Config.APIKey,
-		RetryRateLimit: e.Config.RetryRateLimit,
-		Username:       e.Config.Username,
-		Password:       e.Config.Password,
-	}
-
-	client, err := mv.New(context.Background(), clientConfig)
+	// TODO: maybe make timeout configurable? For now hardcoding to 15s should be quite okay
+	context, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*15))
+	defer cancel()
+	client, err := mv.New(context, &e.Config)
 	if err != nil {
 		return err
 	}
@@ -58,7 +52,7 @@ func (e *MilvusEndpoint) Refresh() error {
 
 func (e *MilvusEndpoint) Close() error {
 	if e != nil && e.Client != nil {
-		e.Client.Close(context.Background())
+		e.Client.Close(context.Background()) // no timeout on close
 	}
 	return nil
 }

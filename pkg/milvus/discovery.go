@@ -58,11 +58,9 @@ func (conf *MilvusProbeConfig) generateClusterEndpointsFromEntry(logger log.Logg
 	address := conf.buildAddress(tlsEnabled, addressUrl)
 
 	endpoint := &MilvusEndpoint{Name: clusterName,
-		ClusterName:        clusterName,
-		Database:           conf.MilvusEndpointConfig.MonitoringSet,
-		MonitoringDatabase: conf.MilvusEndpointConfig.MonitoringSet,
-		ClusterLevel:       true,
-		Config: mv.ClientConfig{
+		ClusterName:  clusterName,
+		ClusterLevel: true,
+		ClientConfig: mv.ClientConfig{
 			// auth
 			Username: username,
 			Password: password,
@@ -74,6 +72,7 @@ func (conf *MilvusProbeConfig) generateClusterEndpointsFromEntry(logger log.Logg
 				MaxBackoff: conf.MilvusEndpointConfig.MaxBackoff,
 			},
 		},
+		Config: conf.MilvusEndpointConfig,
 		Logger: log.With(logger, "endpoint_name", entry.Address),
 	}
 
@@ -91,7 +90,7 @@ func (conf MilvusProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []dis
 			}
 
 			for _, endpoint := range endpoints {
-				level.Debug(logger).Log("msg", "Adding cluster", "cluster", endpoint.Name, "address", endpoint.Config.Address)
+				level.Debug(logger).Log("msg", "Adding cluster", "cluster", endpoint.Name, "address", endpoint.ClientConfig.Address)
 
 				cluster := topology.NewCluster(endpoint)
 				clusterMap.AppendCluster(cluster)

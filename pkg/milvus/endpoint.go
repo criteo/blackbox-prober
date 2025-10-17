@@ -15,15 +15,13 @@ type MilvusEndpoint struct {
 	ClusterLevel bool
 	ClusterName  string
 	Client       *mv.Client
-	Config       mv.ClientConfig
+	ClientConfig mv.ClientConfig
+	Config       MilvusEndpointConfig
 	Logger       log.Logger
-	Database     string
-	// MonitoringDatabase is the database the probe manages (defaults to "monitoring")
-	MonitoringDatabase string
 }
 
 func (e *MilvusEndpoint) GetHash() string {
-	return fmt.Sprintf("%s/%s/db:%s", e.ClusterName, e.Name, e.Database)
+	return fmt.Sprintf("%s/%s/db:%s", e.ClusterName, e.Name, e.Config.MonitoringDatabase)
 }
 
 func (e *MilvusEndpoint) GetName() string {
@@ -38,7 +36,7 @@ func (e *MilvusEndpoint) Connect() error {
 	// TODO: maybe make timeout configurable? For now hardcoding to 15s should be quite okay
 	context, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*15))
 	defer cancel()
-	client, err := mv.New(context, &e.Config)
+	client, err := mv.New(context, &e.ClientConfig)
 	if err != nil {
 		return err
 	}

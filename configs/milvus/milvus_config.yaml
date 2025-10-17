@@ -22,13 +22,23 @@ client_config:
   # Address to connect meta key
   address_meta_key: "external_cluster_fqdn"
   ### Probe discovery configuration ###
-  # The key prefix to discover milvus's databases through service discovery
-  database_meta_key_prefix: "milvus-monitoring-"
   ### Probe configuration ###
-  monitoring_set: monitoring
-  latency_key_prefix: monitoring_latency_
-  durability_key_prefix: monitoring_durability_
-  durability_key_total: 100 # Number of keys to generate for the durability check
+  monitoring_database: monitoring
+  monitoring_collection_latency_rw: monitoring_latency_rw
+  monitoring_collection_latency: monitoring_latency_ro
+  monitoring_collection_durability: monitoring_durability
+  latency_rw_key_prefix: latency_rw_
+  latency_init_key_prefix: latency_init_
+  durability_key_prefix: durability_
+  init_flag_key: init_flag
+  init_items_per_collection: 10000
+  latency_rw_insert_per_check: 10
+  # Timeouts
+  load_timeout: 120s
+  search_timout: 120s
+  initial_flush_timeout: 300s
+  index_timeout: 600s
+  ensure_database_timeout: 600s
   ### Client connection configuration ###
   max_retry: 3 # Specifies the maximum number of times the client should retry the connection.
   max_backoff: 3s # Specifies the maximum back-off duration for the connection (time.Duration)

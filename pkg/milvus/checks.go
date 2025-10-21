@@ -505,7 +505,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	return nil
 }
 
-// DurabilityCheck placeholder (only durability metrics when implemented).
+// DurabilityCheck validates pre-loaded durability records and updates metrics.
 func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	e, ok := p.(*MilvusEndpoint)
 	if !ok {
@@ -516,6 +516,85 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 		return err
 	}
 
-	level.Info(e.Logger).Log("msg", "Milvus durability check to be implemented")
+	col := e.Config.MonitoringCollectionDurability
+	if err := ensureCollection(ctx, e, col); err != nil {
+		return errors.Wrap(err, "ensure durability collection")
+	}
+
+	qo := milvusclient.NewQueryOption(col).
+		WithFilter(fmt.Sprintf("id >= 0 && id < %d", e.Config.InitItemsPerCollection)).
+		WithOutputFields("id", "key", "value").
+		WithConsistencyLevel(entity.ClStrong).
+		WithLimit(e.Config.InitItemsPerCollection)
+
+	qr, err := e.Client.Query(ctx, qo)
+	if err != nil {
+		return errors.Wrap(err, "query durability items")
+	}
+
+	idColI := qr.GetColumn("id")
+	keyColI := qr.GetColumn("key")
+	valColI := qr.GetColumn("value")
+	if idColI == nil || keyColI == nil || valColI == nil {
+		return errors.New("durability query missing id/key/value column")
+	}
+
+	idCol, ok := idColI.(*mvcol.ColumnInt64)
+	if !ok {
+		return errors.New("durability query id column type mismatch")
+	}
+	keyCol, ok := keyColI.(*mvcol.ColumnVarChar)
+	if !ok {
+		return errors.New("durability query key column type mismatch")
+	}
+	valCol, ok := valColI.(*mvcol.ColumnVarChar)
+	if !ok {
+		return errors.New("durability query value column type mismatch")
+	}
+
+	if keyCol.Len() != idCol.Len() || valCol.Len() != idCol.Len() {
+		return errors.Errorf("durability query column length mismatch id=%d key=%d value=%d", idCol.Len(), keyCol.Len(), valCol.Len())
+	}
+
+	expectedTotal := float64(e.Config.InitItemsPerCollection)
+	var foundCount float64
+	var corruptedCount float64
+	seenIDs := make(map[int64]struct{}, idCol.Len())
+	keyPrefix := e.Config.DurabilityKeyPrefix
+
+	for i := 0; i < idCol.Len(); i++ {
+		id := idCol.Data()[i]
+		key := keyCol.Data()[i]
+		val := valCol.Data()[i]
+
+		if id >= 0 && id < int64(e.Config.InitItemsPerCollection) {
+			seenIDs[id] = struct{}{}
+		} else {
+			level.Warn(e.Logger).Log("msg", "durability unexpected id range", "collection", col, "id", id, "key", key)
+		}
+
+		if !strings.HasPrefix(key, keyPrefix) {
+			level.Warn(e.Logger).Log("msg", "durability key missing expected prefix", "collection", col, "key", key, "expected_prefix", keyPrefix)
+		}
+
+		expectedVal := hash(key)
+		if val != expectedVal {
+			corruptedCount++
+			level.Warn(e.Logger).Log("msg", "durability data mismatch", "collection", col, "key", key, "expected", expectedVal, "actual", val)
+		} else {
+			foundCount++
+		}
+	}
+
+	missingCount := e.Config.InitItemsPerCollection - len(seenIDs)
+	if missingCount > 0 {
+		level.Warn(e.Logger).Log("msg", "durability missing items detected", "collection", col, "missing_count", missingCount)
+	}
+
+	labels := []string{e.Config.MonitoringDatabase, e.ClusterName, e.GetName()}
+	durabilityExpectedItems.WithLabelValues(labels...).Set(expectedTotal)
+	durabilityFoundItems.WithLabelValues(labels...).Set(foundCount)
+	durabilityCorruptedItems.WithLabelValues(labels...).Set(corruptedCount)
+
 	return nil
 }

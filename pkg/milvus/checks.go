@@ -223,10 +223,12 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 	flagKey := fmt.Sprintf("%s%s", keyPrefix, e.Config.InitFlagKey)
 	expectedFlagValue := fmt.Sprintf("v1:%d", e.Config.InitItemsPerCollection)
 
-	qr, err := e.Client.Query(ctx, milvusclient.NewQueryOption(collectionName).
+	queryCtx, queryCancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
+	qr, err := e.Client.Query(queryCtx, milvusclient.NewQueryOption(collectionName).
 		WithFilter(fmt.Sprintf(`key == "%s"`, flagKey)).
 		WithOutputFields("value").
 		WithConsistencyLevel(entity.ClStrong))
+	queryCancel()
 	if err == nil {
 		if vcol := qr.GetColumn("value"); vcol != nil {
 			if vv := vcol.(*mvcol.ColumnVarChar).Data(); len(vv) > 0 && vv[0] == expectedFlagValue {
@@ -260,26 +262,32 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 			vecs[i] = normalizeVector(generateRandomVector(DIMENSION))
 		}
 
-		if _, err := e.Client.Insert(ctx,
+		insertCtx, insertCancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
+		_, err := e.Client.Insert(insertCtx,
 			milvusclient.NewColumnBasedInsertOption(collectionName).
 				WithInt64Column("id", ids).
 				WithVarcharColumn("key", keys).
 				WithVarcharColumn("value", values).
 				WithFloatVectorColumn("vector", DIMENSION, vecs),
-		); err != nil {
+		)
+		insertCancel()
+		if err != nil {
 			return errors.Wrapf(err, "insert batch %d-%d", base, end)
 		}
 	}
 
 	{
 		vec := normalizeVector(generateRandomVector(DIMENSION))
-		if _, err := e.Client.Insert(ctx,
+		insertCtx, insertCancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
+		_, err := e.Client.Insert(insertCtx,
 			milvusclient.NewColumnBasedInsertOption(collectionName).
 				WithInt64Column("id", []int64{int64(e.Config.InitItemsPerCollection)}).
 				WithVarcharColumn("key", []string{flagKey}).
 				WithVarcharColumn("value", []string{expectedFlagValue}).
 				WithFloatVectorColumn("vector", DIMENSION, [][]float32{vec}),
-		); err != nil {
+		)
+		insertCancel()
+		if err != nil {
 			return errors.Wrap(err, "insert init flag")
 		}
 	}
@@ -357,7 +365,9 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 		labels := []string{"insert", e.Name, e.Config.MonitoringDatabase, e.ClusterName, e.Name}
 		opInsert := func() error {
-			if _, err := e.Client.Insert(ctx,
+			tctx, cancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
+			defer cancel()
+			if _, err := e.Client.Insert(tctx,
 				milvusclient.NewColumnBasedInsertOption(col).
 					WithInt64Column("id", ids).
 					WithVarcharColumn("key", keys).
@@ -412,7 +422,9 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 		labels[0] = "delete"
 		opDelete := func() error {
-			dr, err := e.Client.Delete(ctx,
+			tctx, cancel := context.WithTimeout(ctx, e.Config.DeleteTimeout)
+			defer cancel()
+			dr, err := e.Client.Delete(tctx,
 				milvusclient.NewDeleteOption(col).
 					WithInt64IDs("id", ids),
 			)
@@ -439,9 +451,11 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 		sampleIDs := sampleUniqueInts(e.Config.LatencyRWInsertPerCheck, e.Config.InitItemsPerCollection)
 		q := fmt.Sprintf("id in [%s]", joinInts(sampleIDs))
-		qr, err := e.Client.Query(ctx, milvusclient.NewQueryOption(col).
+		tctx, cancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
+		qr, err := e.Client.Query(tctx, milvusclient.NewQueryOption(col).
 			WithFilter(q).
 			WithOutputFields("id", "vector"))
+		cancel()
 		if err != nil {
 			return errors.Wrap(err, "query latency RO vectors")
 		}
@@ -527,7 +541,9 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 		WithConsistencyLevel(entity.ClStrong).
 		WithLimit(e.Config.InitItemsPerCollection)
 
-	qr, err := e.Client.Query(ctx, qo)
+	tctx, cancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
+	qr, err := e.Client.Query(tctx, qo)
+	cancel()
 	if err != nil {
 		return errors.Wrap(err, "query durability items")
 	}

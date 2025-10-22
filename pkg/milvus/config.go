@@ -35,6 +35,9 @@ type MilvusEndpointConfig struct {
 	// Timeouts
 	LoadTimeout           time.Duration `yaml:"load_timeout,omitempty"`
 	SearchTimeout         time.Duration `yaml:"search_timout,omitempty"`
+	InsertTimeout         time.Duration `yaml:"insert_timeout,omitempty"`
+	DeleteTimeout         time.Duration `yaml:"delete_timeout,omitempty"`
+	QueryTimeout          time.Duration `yaml:"query_timeout,omitempty"`
 	InitialFlushTimeout   time.Duration `yaml:"initial_flush_timeout,omitempty"`
 	IndexTimeout          time.Duration `yaml:"index_timeout,omitempty"`
 	CreateDatabaseTimeout time.Duration `yaml:"create_database_timeout,omitempty"`
@@ -63,6 +66,9 @@ var (
 
 		LoadTimeout:           120 * time.Second,
 		SearchTimeout:         120 * time.Second,
+		InsertTimeout:         120 * time.Second,
+		DeleteTimeout:         120 * time.Second,
+		QueryTimeout:          120 * time.Second,
 		InitialFlushTimeout:   300 * time.Second,
 		IndexTimeout:          600 * time.Second,
 		CreateDatabaseTimeout: 600 * time.Second,

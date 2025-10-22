@@ -36,6 +36,9 @@ client_config:
   # Timeouts
   load_timeout: 120s
   search_timout: 120s
+  insert_timeout: 120s
+  delete_timeout: 120s
+  query_timeout: 120s
   initial_flush_timeout: 300s
   index_timeout: 600s
   ensure_database_timeout: 600s

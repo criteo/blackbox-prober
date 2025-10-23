@@ -49,26 +49,28 @@ func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger lo
 	}
 
 	namespaces := conf.getNamespacesFromEntry(logger, entry)
+	clusterConfig := AerospikeClientConfig{
+		clusterName: clusterName,
+		// auth
+		authEnabled: authEnabled,
+		username:    username,
+		password:    password,
+		// tls
+		tlsEnabled:  tlsEnabled,
+		tlsHostname: tlsHostname,
+		// conf
+		genericConfig: &conf.AerospikeEndpointConfig,
+		// Contact point
+		host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port},
+	}
 
 	var endpoints []*AerospikeEndpoint
 	for namespace := range namespaces {
 		e := &AerospikeEndpoint{Name: clusterName,
-			ClusterName:  clusterName,
-			Namespace:    namespace,
-			ClusterLevel: true,
-			Config: AerospikeClientConfig{
-				// auth
-				authEnabled: authEnabled,
-				username:    username,
-				password:    password,
-				// tls
-				tlsEnabled:  tlsEnabled,
-				tlsHostname: tlsHostname,
-				// conf
-				genericConfig: &conf.AerospikeEndpointConfig,
-				// Contact point
-				host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port}},
-			Logger: log.With(logger, "endpoint_name", entry.Address),
+			Namespace:     namespace,
+			ClusterLevel:  true,
+			ClusterConfig: &clusterConfig,
+			Logger:        log.With(logger, "endpoint_name", entry.Address),
 		}
 		endpoints = append(endpoints, e)
 	}

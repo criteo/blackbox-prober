@@ -13,6 +13,7 @@ import (
 
 // Config used to configure the client of Aerospike
 type AerospikeClientConfig struct {
+	clusterName string
 	// auth
 	authEnabled bool
 	username    string

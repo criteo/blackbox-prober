@@ -18,17 +18,16 @@ var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 }, []string{"cluster", "probe_endpoint", "namespace", "name"})
 
 type AerospikeEndpoint struct {
-	Name         string
-	ClusterLevel bool
-	ClusterName  string
-	Client       *as.Client
-	Config       AerospikeClientConfig
-	Logger       log.Logger
-	Namespace    string
+	Name          string
+	ClusterLevel  bool
+	Client        *as.Client
+	ClusterConfig *AerospikeClientConfig
+	Logger        log.Logger
+	Namespace     string
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
-	return fmt.Sprintf("%s/%s/ns:%s", e.ClusterName, e.Name, e.Namespace)
+	return fmt.Sprintf("%s/%s/ns:%s", e.ClusterConfig.clusterName, e.Name, e.Namespace)
 }
 
 func (e *AerospikeEndpoint) GetName() string {
@@ -49,7 +48,7 @@ func (e *AerospikeEndpoint) setMetricFromASStats(stats map[string]interface{}, k
 	if !ok {
 		return
 	}
-	clusterStats.WithLabelValues(e.ClusterName, e.GetName(), e.Namespace, key).Set(value)
+	clusterStats.WithLabelValues(e.ClusterConfig.clusterName, e.GetName(), e.Namespace, key).Set(value)
 }
 
 func (e *AerospikeEndpoint) refreshMetrics() {
@@ -75,32 +74,32 @@ func (e *AerospikeEndpoint) refreshMetrics() {
 
 func (e *AerospikeEndpoint) Connect() error {
 	clientPolicy := as.NewClientPolicy()
-	clientPolicy.ConnectionQueueSize = e.Config.genericConfig.ConnectionQueueSize
-	clientPolicy.OpeningConnectionThreshold = e.Config.genericConfig.OpeningConnectionThreshold
-	clientPolicy.MinConnectionsPerNode = e.Config.genericConfig.MinConnectionsPerNode
-	clientPolicy.TendInterval = e.Config.genericConfig.TendInterval
+	clientPolicy.ConnectionQueueSize = e.ClusterConfig.genericConfig.ConnectionQueueSize
+	clientPolicy.OpeningConnectionThreshold = e.ClusterConfig.genericConfig.OpeningConnectionThreshold
+	clientPolicy.MinConnectionsPerNode = e.ClusterConfig.genericConfig.MinConnectionsPerNode
+	clientPolicy.TendInterval = e.ClusterConfig.genericConfig.TendInterval
 
-	if e.Config.tlsEnabled {
+	if e.ClusterConfig.tlsEnabled {
 		// Setup TLS Config
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify:       e.Config.genericConfig.TLSSkipVerify,
+			InsecureSkipVerify:       e.ClusterConfig.genericConfig.TLSSkipVerify,
 			PreferServerCipherSuites: true,
 		}
 		clientPolicy.TlsConfig = tlsConfig
 	}
 
-	if e.Config.authEnabled {
-		if e.Config.genericConfig.AuthExternal {
+	if e.ClusterConfig.authEnabled {
+		if e.ClusterConfig.genericConfig.AuthExternal {
 			clientPolicy.AuthMode = as.AuthModeExternal
 		} else {
 			clientPolicy.AuthMode = as.AuthModeInternal
 		}
 
-		clientPolicy.User = e.Config.username
-		clientPolicy.Password = e.Config.password
+		clientPolicy.User = e.ClusterConfig.username
+		clientPolicy.Password = e.ClusterConfig.password
 	}
 
-	client, err := as.NewClientWithPolicyAndHost(clientPolicy, &e.Config.host)
+	client, err := as.NewClientWithPolicyAndHost(clientPolicy, &e.ClusterConfig.host)
 	if err != nil {
 		return err
 	}

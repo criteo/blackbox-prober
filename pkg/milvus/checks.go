@@ -151,7 +151,7 @@ func ensureMonitoringDB(ctx context.Context, e *MilvusEndpoint) error {
 }
 
 // ensureCollection creates schema+index and loads the collection in current DB.
-func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName string) error {
+func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName string, cl entity.ConsistencyLevel) error {
 	has, err := e.Client.HasCollection(ctx, milvusclient.NewHasCollectionOption(collectionName))
 	if err != nil {
 		return errors.Wrap(err, "failed to check if collection exists")
@@ -184,7 +184,7 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 		WithField(entity.NewField().WithName("value").WithDataType(entity.FieldTypeVarChar).WithMaxLength(MAX_VARCHAR_LEN)).
 		WithField(entity.NewField().WithName("vector").WithDataType(entity.FieldTypeFloatVector).WithDim(DIMENSION))
 
-	if err := e.Client.CreateCollection(ctx, milvusclient.NewCreateCollectionOption(collectionName, schema)); err != nil {
+	if err := e.Client.CreateCollection(ctx, milvusclient.NewCreateCollectionOption(collectionName, schema).WithConsistencyLevel(cl)); err != nil {
 		return errors.Wrap(err, "failed to create collection")
 	}
 	level.Info(e.Logger).Log("msg", "Created collection", "collection", collectionName)
@@ -230,7 +230,7 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 	qr, err := e.Client.Query(queryCtx, milvusclient.NewQueryOption(collectionName).
 		WithFilter(fmt.Sprintf(`key == "%s"`, flagKey)).
 		WithOutputFields("value").
-		WithConsistencyLevel(entity.ClStrong))
+		WithConsistencyLevel(entity.ClStrong)) // use ClStrong regardless of default CL setting for collection, to check init flag
 	if err == nil {
 		if vcol := qr.GetColumn("value"); vcol != nil {
 			if vv := vcol.(*mvcol.ColumnVarChar).Data(); len(vv) > 0 && vv[0] == expectedFlagValue {
@@ -326,13 +326,19 @@ func LatencyPrepare(p topology.ProbeableEndpoint) error {
 	if err := ensureMonitoringDB(ctx, e); err != nil {
 		return err
 	}
-	for _, col := range []string{e.Config.MonitoringCollectionLatencyRW, e.Config.MonitoringCollectionLatencyRO} {
-		if err := ensureCollection(ctx, e, col); err != nil {
-			return errors.Wrapf(err, "ensure %s", col)
-		}
-		if err := initCollectionIfNeeded(ctx, e, col, e.Config.LatencyInitKeyPrefix); err != nil {
-			return errors.Wrapf(err, "init latency %s", col)
-		}
+
+	if err := ensureCollection(ctx, e, e.Config.MonitoringCollectionLatencyRW, entity.ClStrong); err != nil {
+		return errors.Wrapf(err, "ensure %s", e.Config.MonitoringCollectionLatencyRW)
+	}
+	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionLatencyRW, e.Config.LatencyInitKeyPrefix); err != nil {
+		return errors.Wrapf(err, "init latency %s", e.Config.MonitoringCollectionLatencyRW)
+	}
+
+	if err := ensureCollection(ctx, e, e.Config.MonitoringCollectionLatencyRO, entity.DefaultConsistencyLevel); err != nil {
+		return errors.Wrapf(err, "ensure %s", e.Config.MonitoringCollectionLatencyRO)
+	}
+	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionLatencyRO, e.Config.LatencyInitKeyPrefix); err != nil {
+		return errors.Wrapf(err, "init latency %s", e.Config.MonitoringCollectionLatencyRO)
 	}
 
 	return nil
@@ -353,7 +359,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	// RW path
 	{
 		col := e.Config.MonitoringCollectionLatencyRW
-		if err := ensureCollection(ctx, e, col); err != nil {
+		if err := ensureCollection(ctx, e, col, entity.ClStrong); err != nil {
 			return errors.Wrap(err, "ensure latency RW collection")
 		}
 
@@ -404,8 +410,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			rs, err := e.Client.Search(searchCtx,
 				milvusclient.NewSearchOption(col, TOP_K, qvecs).
 					WithANNSField("vector").
-					WithOutputFields("id").
-					WithConsistencyLevel(entity.ClStrong))
+					WithOutputFields("id"))
 			if err != nil {
 				return err
 			}
@@ -456,7 +461,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	// RO search latency
 	{
 		col := e.Config.MonitoringCollectionLatencyRO
-		if err := ensureCollection(ctx, e, col); err != nil {
+		if err := ensureCollection(ctx, e, col, entity.DefaultConsistencyLevel); err != nil {
 			return errors.Wrap(err, "ensure latency RO collection")
 		}
 
@@ -524,7 +529,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	if err := ensureMonitoringDB(ctx, e); err != nil {
 		return err
 	}
-	if err := ensureCollection(ctx, e, e.Config.MonitoringCollectionDurability); err != nil {
+	if err := ensureCollection(ctx, e, e.Config.MonitoringCollectionDurability, entity.DefaultConsistencyLevel); err != nil {
 		return errors.Wrap(err, "ensure durability")
 	}
 	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionDurability, e.Config.DurabilityKeyPrefix); err != nil {
@@ -545,14 +550,13 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	}
 
 	col := e.Config.MonitoringCollectionDurability
-	if err := ensureCollection(ctx, e, col); err != nil {
+	if err := ensureCollection(ctx, e, col, entity.DefaultConsistencyLevel); err != nil {
 		return errors.Wrap(err, "ensure durability collection")
 	}
 
 	qo := milvusclient.NewQueryOption(col).
 		WithFilter(fmt.Sprintf("id >= 0 && id < %d", e.Config.InitItemsPerCollection)).
 		WithOutputFields("id", "key", "value").
-		WithConsistencyLevel(entity.ClStrong).
 		WithLimit(e.Config.InitItemsPerCollection)
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, e.Config.QueryTimeout)

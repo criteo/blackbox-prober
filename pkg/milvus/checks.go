@@ -163,13 +163,14 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 			return errors.Wrap(err, "failed to get load state")
 		}
 		if ls.State == entity.LoadStateNotLoad {
-			tctx, cancel := context.WithTimeout(ctx, e.Config.LoadTimeout)
-			defer cancel()
-			loadTask, err := e.Client.LoadCollection(tctx, milvusclient.NewLoadCollectionOption(collectionName))
+			loadCtx, loadCancel := context.WithTimeout(ctx, e.Config.LoadTimeout)
+			defer loadCancel()
+
+			loadTask, err := e.Client.LoadCollection(loadCtx, milvusclient.NewLoadCollectionOption(collectionName))
 			if err != nil {
 				return errors.Wrap(err, "failed to load collection")
 			}
-			if err := loadTask.Await(tctx); err != nil {
+			if err := loadTask.Await(loadCtx); err != nil {
 				return errors.Wrap(err, "failed to await load task")
 			}
 		}
@@ -189,8 +190,8 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 	level.Info(e.Logger).Log("msg", "Created collection", "collection", collectionName)
 
 	{
-		tctx, cancel := context.WithTimeout(ctx, e.Config.IndexTimeout)
-		defer cancel()
+		tctx, indexCancel := context.WithTimeout(ctx, e.Config.IndexTimeout)
+		defer indexCancel()
 		idx := mvindex.NewFlatIndex(METRIC_TYPE)
 		createIdxTask, err := e.Client.CreateIndex(tctx, milvusclient.NewCreateIndexOption(collectionName, "vector", idx))
 		if err != nil {
@@ -203,8 +204,8 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 	level.Info(e.Logger).Log("msg", "Created FLAT index", "collection", collectionName)
 
 	{
-		tctx, cancel := context.WithTimeout(ctx, e.Config.LoadTimeout)
-		defer cancel()
+		tctx, loadCancel := context.WithTimeout(ctx, e.Config.LoadTimeout)
+		defer loadCancel()
 		loadTask, err := e.Client.LoadCollection(tctx, milvusclient.NewLoadCollectionOption(collectionName))
 		if err != nil {
 			return errors.Wrap(err, "failed to load collection")
@@ -224,11 +225,12 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 	expectedFlagValue := fmt.Sprintf("v1:%d", e.Config.InitItemsPerCollection)
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
+	defer queryCancel()
+
 	qr, err := e.Client.Query(queryCtx, milvusclient.NewQueryOption(collectionName).
 		WithFilter(fmt.Sprintf(`key == "%s"`, flagKey)).
 		WithOutputFields("value").
 		WithConsistencyLevel(entity.ClStrong))
-	queryCancel()
 	if err == nil {
 		if vcol := qr.GetColumn("value"); vcol != nil {
 			if vv := vcol.(*mvcol.ColumnVarChar).Data(); len(vv) > 0 && vv[0] == expectedFlagValue {
@@ -263,6 +265,8 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 		}
 
 		insertCtx, insertCancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
+		defer insertCancel()
+
 		_, err := e.Client.Insert(insertCtx,
 			milvusclient.NewColumnBasedInsertOption(collectionName).
 				WithInt64Column("id", ids).
@@ -270,7 +274,7 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 				WithVarcharColumn("value", values).
 				WithFloatVectorColumn("vector", DIMENSION, vecs),
 		)
-		insertCancel()
+
 		if err != nil {
 			return errors.Wrapf(err, "insert batch %d-%d", base, end)
 		}
@@ -278,15 +282,17 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 
 	{
 		vec := normalizeVector(generateRandomVector(DIMENSION))
-		insertCtx, insertCancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
-		_, err := e.Client.Insert(insertCtx,
+
+		insertInitFlagCtx, insertInitFlagCancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
+		defer insertInitFlagCancel()
+
+		_, err := e.Client.Insert(insertInitFlagCtx,
 			milvusclient.NewColumnBasedInsertOption(collectionName).
 				WithInt64Column("id", []int64{int64(e.Config.InitItemsPerCollection)}).
 				WithVarcharColumn("key", []string{flagKey}).
 				WithVarcharColumn("value", []string{expectedFlagValue}).
 				WithFloatVectorColumn("vector", DIMENSION, [][]float32{vec}),
 		)
-		insertCancel()
 		if err != nil {
 			return errors.Wrap(err, "insert init flag")
 		}
@@ -294,13 +300,14 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 
 	// Manual flush is OK because this is only done once
 	{
-		tctx, cancel := context.WithTimeout(ctx, e.Config.InitialFlushTimeout)
-		defer cancel()
-		ft, err := e.Client.Flush(tctx, milvusclient.NewFlushOption(collectionName))
+		flushCtx, flushCancel := context.WithTimeout(ctx, e.Config.InitialFlushTimeout)
+		defer flushCancel()
+
+		ft, err := e.Client.Flush(flushCtx, milvusclient.NewFlushOption(collectionName))
 		if err != nil {
 			return errors.Wrap(err, "initCollectionIfNeeded flush")
 		}
-		if err := ft.Await(tctx); err != nil {
+		if err := ft.Await(flushCtx); err != nil {
 			return errors.Wrap(err, "await initCollectionIfNeeded flush")
 		}
 	}
@@ -365,9 +372,10 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 		labels := []string{"insert", e.Name, e.Config.MonitoringDatabase, e.ClusterName, e.Name}
 		opInsert := func() error {
-			tctx, cancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
-			defer cancel()
-			if _, err := e.Client.Insert(tctx,
+			insertCtx, insertCancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
+			defer insertCancel()
+
+			if _, err := e.Client.Insert(insertCtx,
 				milvusclient.NewColumnBasedInsertOption(col).
 					WithInt64Column("id", ids).
 					WithVarcharColumn("key", keys).
@@ -389,9 +397,11 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			for i := range vecs {
 				qvecs[i] = entity.FloatVector(vecs[i])
 			}
-			tctx, cancel := context.WithTimeout(ctx, e.Config.SearchTimeout)
-			defer cancel()
-			rs, err := e.Client.Search(tctx,
+
+			searchCtx, searchCancel := context.WithTimeout(ctx, e.Config.SearchTimeout)
+			defer searchCancel()
+
+			rs, err := e.Client.Search(searchCtx,
 				milvusclient.NewSearchOption(col, TOP_K, qvecs).
 					WithANNSField("vector").
 					WithOutputFields("id").
@@ -422,9 +432,10 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 		labels[0] = "delete"
 		opDelete := func() error {
-			tctx, cancel := context.WithTimeout(ctx, e.Config.DeleteTimeout)
-			defer cancel()
-			dr, err := e.Client.Delete(tctx,
+			deleteCtx, deleteCancel := context.WithTimeout(ctx, e.Config.DeleteTimeout)
+			defer deleteCancel()
+
+			dr, err := e.Client.Delete(deleteCtx,
 				milvusclient.NewDeleteOption(col).
 					WithInt64IDs("id", ids),
 			)
@@ -451,11 +462,13 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 		sampleIDs := sampleUniqueInts(e.Config.LatencyRWInsertPerCheck, e.Config.InitItemsPerCollection)
 		q := fmt.Sprintf("id in [%s]", joinInts(sampleIDs))
-		tctx, cancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
-		qr, err := e.Client.Query(tctx, milvusclient.NewQueryOption(col).
+
+		queryCtx, queryCancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
+		defer queryCancel()
+
+		qr, err := e.Client.Query(queryCtx, milvusclient.NewQueryOption(col).
 			WithFilter(q).
 			WithOutputFields("id", "vector"))
-		cancel()
 		if err != nil {
 			return errors.Wrap(err, "query latency RO vectors")
 		}
@@ -472,9 +485,10 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			id := idCol.Data()[i]
 			vec := vecCol.Data()[i]
 			opSearch := func() error {
-				tctx, cancel := context.WithTimeout(ctx, e.Config.SearchTimeout)
-				defer cancel()
-				rs, err := e.Client.Search(tctx,
+				searchRoCtx, searchRoCancel := context.WithTimeout(ctx, e.Config.SearchTimeout)
+				defer searchRoCancel()
+
+				rs, err := e.Client.Search(searchRoCtx,
 					milvusclient.NewSearchOption(col, TOP_K, []entity.Vector{entity.FloatVector(vec)}).
 						WithANNSField("vector").
 						WithOutputFields("id"))
@@ -541,9 +555,10 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 		WithConsistencyLevel(entity.ClStrong).
 		WithLimit(e.Config.InitItemsPerCollection)
 
-	tctx, cancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
-	qr, err := e.Client.Query(tctx, qo)
-	cancel()
+	queryCtx, queryCancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
+	defer queryCancel()
+
+	qr, err := e.Client.Query(queryCtx, qo)
 	if err != nil {
 		return errors.Wrap(err, "query durability items")
 	}

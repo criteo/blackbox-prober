@@ -1,5 +1,5 @@
 name: Release
-on: 
+on:
   release:
     types: [published]
 jobs:
@@ -29,7 +29,8 @@ jobs:
     - name: Package
       run: tar -czvf blackbox-prober.tar.gz build/
     - name: Upload
-      uses: fnkr/github-action-ghr@v1
+      uses: softprops/action-gh-release@v1
+      with:
+        files: blackbox-prober.tar.gz
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GHR_PATH: blackbox-prober.tar.gz

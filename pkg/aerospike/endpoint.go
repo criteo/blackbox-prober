@@ -2,7 +2,6 @@ package aerospike
 
 import (
 	"crypto/tls"
-	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -18,16 +17,19 @@ var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 }, []string{"cluster", "probe_endpoint", "namespace", "name"})
 
 type AerospikeEndpoint struct {
-	Name          string
+	Name string
+	// indicates if endpoint should be used for cluster checks or for node checks
 	ClusterLevel  bool
 	Client        *as.Client
-	ClusterConfig *AerospikeClientConfig
+	ClusterConfig *AerospikeClusterConfig
 	Logger        log.Logger
 	Namespace     string
+	// Contact point
+	Seed as.Host
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
-	return fmt.Sprintf("%s/%s/ns:%s", e.ClusterConfig.clusterName, e.Name, e.Namespace)
+	return e.GetName()
 }
 
 func (e *AerospikeEndpoint) GetName() string {
@@ -74,9 +76,11 @@ func (e *AerospikeEndpoint) refreshMetrics() {
 
 func (e *AerospikeEndpoint) Connect() error {
 	clientPolicy := as.NewClientPolicy()
-	clientPolicy.ConnectionQueueSize = e.ClusterConfig.genericConfig.ConnectionQueueSize
-	clientPolicy.OpeningConnectionThreshold = e.ClusterConfig.genericConfig.OpeningConnectionThreshold
-	clientPolicy.MinConnectionsPerNode = e.ClusterConfig.genericConfig.MinConnectionsPerNode
+	if e.ClusterLevel {
+		clientPolicy.ConnectionQueueSize = e.ClusterConfig.genericConfig.ConnectionQueueSize
+		clientPolicy.OpeningConnectionThreshold = e.ClusterConfig.genericConfig.OpeningConnectionThreshold
+		clientPolicy.MinConnectionsPerNode = e.ClusterConfig.genericConfig.MinConnectionsPerNode
+	}
 	clientPolicy.TendInterval = e.ClusterConfig.genericConfig.TendInterval
 
 	if e.ClusterConfig.tlsEnabled {
@@ -99,7 +103,7 @@ func (e *AerospikeEndpoint) Connect() error {
 		clientPolicy.Password = e.ClusterConfig.password
 	}
 
-	client, err := as.NewClientWithPolicyAndHost(clientPolicy, &e.ClusterConfig.host)
+	client, err := as.NewClientWithPolicyAndHost(clientPolicy, &e.Seed)
 	if err != nil {
 		return err
 	}

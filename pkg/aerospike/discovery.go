@@ -15,73 +15,42 @@ import (
 	"github.com/go-kit/log/level"
 )
 
-func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry) ([]*AerospikeEndpoint, error) {
-	authEnabled := conf.AerospikeEndpointConfig.AuthEnabled
-	var (
-		username    string
-		password    string
-		tlsHostname string
-		ok          bool
-	)
-	if authEnabled {
-		username, ok = os.LookupEnv(conf.AerospikeEndpointConfig.UsernameEnv)
-		if !ok {
-			return nil, fmt.Errorf("error: username not found in env (%s)", conf.AerospikeEndpointConfig.UsernameEnv)
-		}
-		password, ok = os.LookupEnv(conf.AerospikeEndpointConfig.PasswordEnv)
-		if !ok {
-			return nil, fmt.Errorf("error: password not found in env (%s)", conf.AerospikeEndpointConfig.PasswordEnv)
-		}
-	}
-
-	tlsEnabled := utils.Contains(entry.Tags, conf.AerospikeEndpointConfig.TLSTag)
-	if tlsEnabled {
-		hostname, ok := entry.Meta[conf.AerospikeEndpointConfig.TLSHostnameMetaKey]
-		if ok {
-			tlsHostname = hostname
-		}
-	}
-
-	clusterName, ok := entry.Meta[conf.DiscoveryConfig.MetaClusterKey]
-	if !ok {
-		level.Warn(logger).Log("msg", "Cluster name not found, replacing it with hostname")
-		clusterName = entry.Address
-	}
-
-	namespaces := conf.getNamespacesFromEntry(logger, entry)
-	clusterConfig := AerospikeClientConfig{
-		clusterName: clusterName,
-		// auth
-		authEnabled: authEnabled,
-		username:    username,
-		password:    password,
-		// tls
-		tlsEnabled:  tlsEnabled,
-		tlsHostname: tlsHostname,
-		// conf
-		genericConfig: &conf.AerospikeEndpointConfig,
-		// Contact point
-		host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port},
-	}
-
-	var endpoints []*AerospikeEndpoint
-	for namespace := range namespaces {
-		e := &AerospikeEndpoint{Name: clusterName,
+func (conf *AerospikeProbeConfig) addCluster(clusterConfig *AerospikeClusterConfig, clusterServices []discovery.ServiceEntry, clusterMap topology.ClusterMap, logger log.Logger) error {
+	// generate one endpoint per cluster per namespace for latency & durability checks (cluster checks)
+	for _, namespace := range clusterConfig.namespaces {
+		cluster := topology.NewCluster(&AerospikeEndpoint{
+			Name:          fmt.Sprintf("%s/%s", clusterConfig.clusterName, namespace),
 			Namespace:     namespace,
+			Seed:          as.Host{Name: clusterServices[0].Address, Port: clusterServices[0].Port, TLSName: clusterConfig.tlsHostname},
 			ClusterLevel:  true,
-			ClusterConfig: &clusterConfig,
-			Logger:        log.With(logger, "endpoint_name", entry.Address),
-		}
-		endpoints = append(endpoints, e)
+			ClusterConfig: clusterConfig,
+			Logger:        log.With(logger, "endpoint_name", clusterServices[0].Address),
+		})
+
+		clusterMap.AppendCluster(cluster)
 	}
 
-	return endpoints, nil
+	// generate one endpoint per cluster per node for availability check (node checks)
+	for _, clusterService := range clusterServices {
+		cluster := topology.NewCluster(&AerospikeEndpoint{
+			Name:          fmt.Sprintf("%s/%s", clusterConfig.clusterName, clusterService.Address),
+			Namespace:     "",
+			Seed:          as.Host{Name: clusterService.Address, Port: clusterService.Port, TLSName: clusterConfig.tlsHostname},
+			ClusterLevel:  false, // ClusterLevel flag is used
+			ClusterConfig: clusterConfig,
+			Logger:        log.With(logger, "endpoint_name", clusterService.Address),
+		})
+
+		clusterMap.AppendCluster(cluster)
+	}
+
+	return nil
 }
 
-func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry discovery.ServiceEntry) map[string]struct{} {
+func (conf *AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, clusterService *discovery.ServiceEntry) map[string]struct{} {
 	namespaces := make(map[string]struct{})
 
-	for metaKey, metaValue := range entry.Meta {
+	for metaKey, metaValue := range clusterService.Meta {
 		if !strings.HasPrefix(metaKey, conf.AerospikeEndpointConfig.NamespaceMetaKeyPrefix) {
 			continue
 		}
@@ -103,22 +72,66 @@ func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry
 	return namespaces
 }
 
-func (conf AerospikeProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
-	return func(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
-		clusterMap := topology.NewClusterMap()
-		clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
-		for _, entries := range clusterEntries {
-			endpoints, err := conf.generateNamespacedEndpointsFromEntry(logger, entries[0])
-			if err != nil {
-				return clusterMap, err
-			}
-
-			for _, endpoint := range endpoints {
-				cluster := topology.NewCluster(endpoint)
-				clusterMap.AppendCluster(cluster)
-			}
-
+func (conf *AerospikeProbeConfig) buildClusterConfig(clusterName string, clusterService *discovery.ServiceEntry, logger log.Logger) (*AerospikeClusterConfig, error) {
+	authEnabled := conf.AerospikeEndpointConfig.AuthEnabled
+	var username, password string
+	var ok bool
+	if authEnabled {
+		username, ok = os.LookupEnv(conf.AerospikeEndpointConfig.UsernameEnv)
+		if !ok {
+			return nil, fmt.Errorf("error: username not found in env (%s)", conf.AerospikeEndpointConfig.UsernameEnv)
 		}
-		return clusterMap, nil
+		password, ok = os.LookupEnv(conf.AerospikeEndpointConfig.PasswordEnv)
+		if !ok {
+			return nil, fmt.Errorf("error: password not found in env (%s)", conf.AerospikeEndpointConfig.PasswordEnv)
+		}
 	}
+
+	tlsEnabled := utils.Contains(clusterService.Tags, conf.AerospikeEndpointConfig.TLSTag)
+	var tlsHostname string
+	if tlsEnabled {
+		tlsHostname, ok = clusterService.Meta[conf.AerospikeEndpointConfig.TLSHostnameMetaKey]
+		if !ok {
+			return nil, fmt.Errorf("unable to determine tls hostname from consul service meta %s", conf.AerospikeEndpointConfig.TLSHostnameMetaKey)
+		}
+	}
+
+	namespaces := []string{}
+	for ns := range conf.getNamespacesFromEntry(logger, clusterService) {
+		namespaces = append(namespaces, ns)
+	}
+
+	return &AerospikeClusterConfig{
+		clusterName: clusterName,
+		namespaces:  namespaces,
+		// auth
+		authEnabled: authEnabled,
+		username:    username,
+		password:    password,
+		// tls
+		tlsEnabled:  tlsEnabled,
+		tlsHostname: tlsHostname,
+		// conf
+		genericConfig: &conf.AerospikeEndpointConfig,
+	}, nil
+}
+
+func (conf *AerospikeProbeConfig) DiscoverClusters(logger log.Logger, aerospikeServices []discovery.ServiceEntry) (topology.ClusterMap, error) {
+	clusterMap := topology.NewClusterMap()
+
+	aerospikeServicesPerCluster := conf.DiscoveryConfig.GroupNodesByCluster(logger, aerospikeServices)
+
+	for clusterName, clusterServices := range aerospikeServicesPerCluster {
+		clusterConfig, err := conf.buildClusterConfig(clusterName, &clusterServices[0], logger)
+		if err != nil {
+			return clusterMap, err
+		}
+
+		err = conf.addCluster(clusterConfig, clusterServices, clusterMap, logger)
+		if err != nil {
+			return clusterMap, err
+		}
+	}
+
+	return clusterMap, nil
 }

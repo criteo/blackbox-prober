@@ -3,7 +3,6 @@ package aerospike
 import (
 	"time"
 
-	as "github.com/aerospike/aerospike-client-go/v7"
 	asl "github.com/aerospike/aerospike-client-go/v7/logger"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
@@ -12,8 +11,9 @@ import (
 )
 
 // Config used to configure the client of Aerospike
-type AerospikeClientConfig struct {
+type AerospikeClusterConfig struct {
 	clusterName string
+	namespaces  []string // list of namespaces declared in consul
 	// auth
 	authEnabled bool
 	username    string
@@ -21,8 +21,6 @@ type AerospikeClientConfig struct {
 	// tls
 	tlsEnabled  bool
 	tlsHostname string
-	// Contact point
-	host as.Host
 	// Config
 	genericConfig *AerospikeEndpointConfig
 }

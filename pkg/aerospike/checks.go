@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v7"
@@ -44,6 +45,24 @@ var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_durability_corrupted_items",
 	Help: "Total number of items found to be corrupted for durability",
 }, []string{"namespace", "cluster", "probe_endpoint"})
+
+var namespaceAvailability = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: ASSuffix + "_namespace_availability",
+	Help: "Whether the namespace is currently available (1 = up, 0 = down).",
+}, []string{"namespace", "cluster", "endpoint"})
+var namespaceAvailabilityChecks = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: ASSuffix + "_namespace_availability_check_total",
+	Help: "Total number of availability checks performed on cluster x namespace",
+}, []string{"namespace", "cluster", "endpoint", "state"})
+
+var nodeAvailability = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: ASSuffix + "_node_availability",
+	Help: "Whether the node is currently available (1 = up, 0 = down).",
+}, []string{"cluster", "endpoint"})
+var nodeAvailabilityChecks = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: ASSuffix + "_node_availability_check_total",
+	Help: "Total number of availability checks performed on cluster x node",
+}, []string{"cluster", "endpoint", "state"})
 
 // getWriteNode find the node against which the write will be made
 func getWriteNode(c *as.Client, policy *as.WritePolicy, key *as.Key) (*as.Node, error) {
@@ -273,5 +292,74 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	durabilityExpectedItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(float64(keyRange))
 	durabilityFoundItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_found_items)
 	durabilityCorruptedItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_corrupted_items)
+	return nil
+}
+
+func AvailabilityCheck(p topology.ProbeableEndpoint) error {
+	e, ok := p.(*AerospikeEndpoint)
+	if !ok {
+		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
+	}
+
+	if e.Client == nil {
+		err := e.DoConnect()
+		if err != nil {
+			return fmt.Errorf("unable to connect to %s: %w", e.GetName(), err)
+		}
+	}
+
+	available_namespaces := map[string]string{}
+	var info map[string]string
+	var err error
+
+	for _, node := range e.Client.GetNodes() {
+		host := node.GetHost()
+		if host.Name == e.Seed.Name && host.Port == e.Seed.Port {
+			policy := as.NewInfoPolicy()
+			info, err = node.RequestInfo(policy, "namespaces")
+			if err == nil {
+				node_namespaces, ok := info["namespaces"]
+				if ok {
+					for ns := range strings.SplitSeq(node_namespaces, ";") {
+						available_namespaces[ns] = ns
+					}
+				}
+			} else {
+				level.Info(e.Logger).Log("msg", fmt.Sprintf("failure to retrieve cluster namespace via endpoint %s: %v", e.GetName(), err))
+			}
+			break
+		}
+	}
+
+	for _, ns := range e.ClusterConfig.namespaces {
+		_, ok := available_namespaces[ns]
+
+		var state string
+		var availability float64
+		if ok {
+			state = "up"
+			availability = 1
+		} else {
+			state = "down"
+			availability = 0
+		}
+		namespaceAvailabilityChecks.WithLabelValues(ns, e.ClusterConfig.clusterName, e.Seed.Name, state).Inc()
+		namespaceAvailability.WithLabelValues(ns, e.ClusterConfig.clusterName, e.Seed.Name).Set(availability)
+	}
+
+	var state string
+	var availability float64
+	if err == nil {
+		state = "up"
+		availability = 1
+	} else {
+		state = "down"
+		availability = 0
+	}
+	nodeAvailabilityChecks.WithLabelValues(e.ClusterConfig.clusterName, e.Seed.Name, state).Inc()
+	nodeAvailability.WithLabelValues(e.ClusterConfig.clusterName, e.Seed.Name).Set(availability)
+
+	e.Close() // To force reconnection at next check
+
 	return nil
 }

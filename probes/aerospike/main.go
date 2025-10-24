@@ -91,6 +91,14 @@ func main() {
 			Interval:   config.AerospikeChecksConfigs.DurabilityCheckConfig.Interval,
 		})
 	}
-
+	if config.AerospikeChecksConfigs.AvailabilityCheckConfig.Enable {
+		p.RegisterNewNodeCheck(scheduler.Check{
+			Name:       "availability_check",
+			PrepareFn:  scheduler.Noop,
+			CheckFn:    aerospike.AvailabilityCheck,
+			TeardownFn: scheduler.Noop,
+			Interval:   config.AerospikeChecksConfigs.AvailabilityCheckConfig.Interval,
+		})
+	}
 	p.Start()
 }

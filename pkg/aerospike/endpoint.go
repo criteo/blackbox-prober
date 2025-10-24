@@ -54,12 +54,18 @@ func (e *AerospikeEndpoint) setMetricFromASStats(stats map[string]interface{}, k
 }
 
 func (e *AerospikeEndpoint) refreshMetrics() {
+	// endpoint need to be connected
+	// and we export on client metrics only for cluster endpoint to keep number of metrics low
+	if e.Client == nil || !e.IsCluster() {
+		return
+	}
+
 	stats, err := e.Client.Stats()
-	cluster_stats := stats["cluster-aggregated-stats"].(map[string]interface{})
 	if err != nil {
 		level.Error(e.Logger).Log("msg", "Failed to pull metrics from aerospike client", "err", err)
 		return
 	}
+	cluster_stats := stats["cluster-aggregated-stats"].(map[string]interface{})
 	e.setMetricFromASStats(cluster_stats, "open-connections")
 	e.setMetricFromASStats(cluster_stats, "closed-connections")
 	e.setMetricFromASStats(cluster_stats, "connections-attempts")
@@ -74,7 +80,7 @@ func (e *AerospikeEndpoint) refreshMetrics() {
 	e.setMetricFromASStats(cluster_stats, "tends-failed")
 }
 
-func (e *AerospikeEndpoint) Connect() error {
+func (e *AerospikeEndpoint) DoConnect() error {
 	clientPolicy := as.NewClientPolicy()
 	if e.ClusterLevel {
 		clientPolicy.ConnectionQueueSize = e.ClusterConfig.genericConfig.ConnectionQueueSize
@@ -112,14 +118,30 @@ func (e *AerospikeEndpoint) Connect() error {
 	return nil
 }
 
+func (e *AerospikeEndpoint) Connect() error {
+	if !e.IsCluster() {
+		// skip auto-connect for node endpoints
+		// handling connection directly in checks to improve parallelism
+		return nil
+	}
+
+	err := e.DoConnect()
+	if err == nil {
+		e.Refresh()
+	}
+
+	return err
+}
+
 func (e *AerospikeEndpoint) Refresh() error {
 	e.refreshMetrics()
 	return nil
 }
 
 func (e *AerospikeEndpoint) Close() error {
-	if e != nil && e.Client != nil {
+	if e.Client != nil {
 		e.Client.Close()
+		e.Client = nil
 	}
 	return nil
 }

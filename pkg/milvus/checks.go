@@ -485,7 +485,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		idCol := idColI.(*mvcol.ColumnInt64)
 		vecCol := vecColI.(*mvcol.ColumnFloatVector)
 
-		searchLabels := []string{"search_ro_latency", e.Name, e.Config.MonitoringDatabase, e.ClusterName, e.Name}
+		searchLabels := []string{"search_ro", e.Name, e.Config.MonitoringDatabase, e.ClusterName, e.Name}
 		for i := 0; i < idCol.Len(); i++ {
 			id := idCol.Data()[i]
 			vec := vecCol.Data()[i]

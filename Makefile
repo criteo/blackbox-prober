@@ -17,7 +17,13 @@ build_milvus:
 build_linux_milvus:
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/milvus_probe probes/milvus/*.go
 
-build_linux: build_linux_aerospike build_linux_milvus
+build_opensearch:
+		CGO_ENABLED=0 go build -o build/opensearch_probe probes/opensearch/main.go
+
+build_linux_opensearch:
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/opensearch_probe probes/opensearch/*.go
+
+build_linux: build_linux_aerospike build_linux_milvus build_linux_opensearch
 
 lint:
 		gofmt -d -e -s pkg/**/*.go probes/**/*.go

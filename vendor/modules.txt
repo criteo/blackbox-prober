@@ -292,6 +292,17 @@ github.com/mwitkow/go-conntrack
 # github.com/opencontainers/runtime-spec v1.0.2
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
+# github.com/opensearch-project/opensearch-go v1.1.0
+## explicit; go 1.11
+github.com/opensearch-project/opensearch-go/internal/version
+github.com/opensearch-project/opensearch-go/opensearchapi
+# github.com/opensearch-project/opensearch-go/v4 v4.5.0
+## explicit; go 1.22
+github.com/opensearch-project/opensearch-go/v4
+github.com/opensearch-project/opensearch-go/v4/internal/version
+github.com/opensearch-project/opensearch-go/v4/opensearchapi
+github.com/opensearch-project/opensearch-go/v4/opensearchtransport
+github.com/opensearch-project/opensearch-go/v4/signer
 # github.com/panjf2000/ants/v2 v2.11.3
 ## explicit; go 1.18
 github.com/panjf2000/ants/v2
@@ -364,13 +375,13 @@ github.com/spf13/pflag
 ## explicit; go 1.17
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/assert/yaml
-# github.com/tidwall/gjson v1.17.1
+# github.com/tidwall/gjson v1.18.0
 ## explicit; go 1.12
 github.com/tidwall/gjson
 # github.com/tidwall/match v1.1.1
 ## explicit; go 1.15
 github.com/tidwall/match
-# github.com/tidwall/pretty v1.2.0
+# github.com/tidwall/pretty v1.2.1
 ## explicit; go 1.16
 github.com/tidwall/pretty
 # github.com/tklauser/go-sysconf v0.3.11

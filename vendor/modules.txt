@@ -292,16 +292,13 @@ github.com/mwitkow/go-conntrack
 # github.com/opencontainers/runtime-spec v1.0.2
 ## explicit
 github.com/opencontainers/runtime-spec/specs-go
-# github.com/opensearch-project/opensearch-go v1.1.0
-## explicit; go 1.11
-github.com/opensearch-project/opensearch-go/internal/version
-github.com/opensearch-project/opensearch-go/opensearchapi
 # github.com/opensearch-project/opensearch-go/v4 v4.5.0
 ## explicit; go 1.22
 github.com/opensearch-project/opensearch-go/v4
 github.com/opensearch-project/opensearch-go/v4/internal/version
 github.com/opensearch-project/opensearch-go/v4/opensearchapi
 github.com/opensearch-project/opensearch-go/v4/opensearchtransport
+github.com/opensearch-project/opensearch-go/v4/opensearchutil
 github.com/opensearch-project/opensearch-go/v4/signer
 # github.com/panjf2000/ants/v2 v2.11.3
 ## explicit; go 1.18

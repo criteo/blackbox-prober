@@ -64,7 +64,8 @@ func (conf *OpenSearchProbeConfig) buildOpenSearchEndpoint(logger log.Logger, cl
 	}
 
 	endpoint := &OpenSearchEndpoint{
-		Name:         entry.Address,
+		Name: entry.Address,
+
 		ClusterName:  clusterName,
 		ClusterLevel: true,
 		ClientConfig: clientConfig,

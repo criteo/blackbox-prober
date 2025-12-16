@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cockroachdb/errors"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
 	"github.com/go-kit/log/level"
@@ -38,12 +37,12 @@ var opLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    OSSuffix + "_op_latency",
 	Help:    "Latency for operations",
 	Buckets: utils.MetricHistogramBuckets,
-}, []string{"operation", "endpoint", "cluster"})
+}, []string{"operation", "endpoint", "cluster", "index"})
 
 var opFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: OSSuffix + "_op_latency_failures",
 	Help: "Total number of operations that resulted in failure",
-}, []string{"operation", "endpoint", "cluster"})
+}, []string{"operation", "endpoint", "cluster", "index"})
 
 var opDurabilityExpectedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: OSSuffix + "_durability_expected_items",
@@ -58,6 +57,16 @@ var opDurabilityFoundItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 var opDurabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: OSSuffix + "_durability_corrupted_items",
 	Help: "Total number of corrupted items in the durability index",
+}, []string{"cluster"})
+
+var nodeAvailability = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: OSSuffix + "_node_availability",
+	Help: "Availability status of nodes in the cluster (1 = available, 0 = unavailable)",
+}, []string{"cluster", "node_name", "exported_pod"})
+
+var clusterErrorsCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: OSSuffix + "_cluster_errors_count",
+	Help: "Total number of errors in the cluster",
 }, []string{"cluster"})
 
 // ObserveOpLatency measures the latency of the given operation function 'op' and records it in the opLatency histogram.
@@ -80,16 +89,20 @@ func LatencyPrepare(p topology.ProbeableEndpoint) error {
 		return fmt.Errorf("error: given endpoint is not an opensearch endpoint")
 	}
 
+	// Init cluster and node error count metric
+	clusterErrorsCount.WithLabelValues(e.ClusterName).Set(0)
+	nodeAvailability.WithLabelValues(e.ClusterName, e.Name, e.PodName).Set(0)
+
 	// Check if latency index exists, create it if it does not
 	exists, err := e.checkIndexExists(LATENCY_INDEX_NAME)
 	if err != nil {
-		return fmt.Errorf("error checking if latency index exists: %v", err)
+		return	errorHandler(fmt.Errorf("error checking if latency index exists: %v", err), e.ClusterName)
 	}
 	if !exists {
 		level.Info(e.Logger).Log("msg", fmt.Sprintf("Latency index %s does not exist, creating it", LATENCY_INDEX_NAME))
 		err = e.createIndex(LATENCY_INDEX_NAME, LATENCY_INDEX_NUM_SHARDS, LATENCY_INDEX_NUM_REPLICAS)
 		if err != nil {
-			return fmt.Errorf("error creating latency index: %v", err)
+			return errorHandler(fmt.Errorf("error creating latency index: %v", err), e.ClusterName)
 		}
 	}
 
@@ -106,19 +119,19 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	documentID := LATENCY_DOCUMENT_ID_PREFIX + uuid.New().String()
 
 	// CREATE DOCUMENT
-	labels := []string{"put", e.Name, e.ClusterName}
+	labels := []string{"put", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
 	opPut := func() error {
 		return e.insertDocument(LATENCY_INDEX_NAME, documentID, LATENCY_DOCUMENT_CONTENT)
 	}
 
 	err := ObserveOpLatency(opPut, labels)
 	if err != nil {
-		return errors.Wrapf(err, "fail to create document %s: %s", documentID, err)
+		return errorHandler(fmt.Errorf("fail to create document %s: %s", documentID, err), e.ClusterName)
 	}
 	level.Debug(e.Logger).Log("msg", fmt.Sprintf("document created: %s", documentID))
 
 	// GET DOCUMENT
-	labels = []string{"get", e.Name, e.ClusterName}
+	labels = []string{"get", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
 	opGet := func() error {
 		content, err := e.getDocument(LATENCY_INDEX_NAME, documentID)
 		if err != nil {
@@ -134,31 +147,37 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	}
 	err = ObserveOpLatency(opGet, labels)
 	if err != nil {
-		return errors.Wrapf(err, "record get failed for: %s", documentID)
+		return errorHandler(fmt.Errorf("record get failed for: %s", documentID), e.ClusterName)
 	}
 
 	// DELETE DOCUMENT
-	labels = []string{"delete", e.Name, e.ClusterName}
+	labels = []string{"delete", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
 	opDelete := func() error {
 		return e.deleteDocument(LATENCY_INDEX_NAME, documentID)
 	}
 
 	err = ObserveOpLatency(opDelete, labels)
 	if err != nil {
-		return errors.Wrapf(err, "record delete failed for: %s", documentID)
+		return errorHandler(fmt.Errorf("record delete failed for: %s", documentID), e.ClusterName)
 	}
 	level.Debug(e.Logger).Log("msg", fmt.Sprintf("document delete: %s", documentID))
 
 	// CAT HEALTH
-	labels = []string{"cat_health", e.Name, e.ClusterName}
+	labels = []string{"cat_health", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
+	labelsAvailability := []string{e.ClusterName, e.Name, e.PodName}
 	opCat := func() error {
 		return e.catHealth()
 	}
 
 	err = ObserveOpLatency(opCat, labels)
 	if err != nil {
-		return errors.Wrapf(err, "failed to get cat health for %s: %s", e.Name, err)
+		// Set node availability metric to 0 on failure
+		nodeAvailability.WithLabelValues(labelsAvailability...).Set(0)
+		return errorHandler(fmt.Errorf("failed to get cat health for %s: %s", e.Name, err), e.ClusterName)
 	}
+	// Set node availability metric to 1 on success
+	nodeAvailability.WithLabelValues(labelsAvailability...).Set(1)
+
 	level.Debug(e.Logger).Log("msg", fmt.Sprintf("cat health success for: %s", e.Name))
 
 	return nil
@@ -177,19 +196,19 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	// Check if durability index exists, create it if it does not
 	exists, err := e.checkIndexExists(DURABILITY_INDEX_NAME)
 	if err != nil {
-		return fmt.Errorf("error checking if durability index exists: %v", err)
+		return errorHandler(fmt.Errorf("error checking if durability index exists: %v", err), e.ClusterName)
 	}
 	if !exists {
 		level.Info(e.Logger).Log("msg", fmt.Sprintf("Durability index %s does not exist, creating it", DURABILITY_INDEX_NAME))
 		err = e.createIndex(DURABILITY_INDEX_NAME, DURABILITY_INDEX_NUM_SHARDS, DURABILITY_INDEX_NUM_REPLICAS)
 		if err != nil {
-			return fmt.Errorf("error creating durability index: %v", err)
+			return errorHandler(fmt.Errorf("error creating durability index: %v", err), e.ClusterName)
 		}
 
 		// Create all the durability documents
 		err = e.insertDocumentBulk(DURABILITY_INDEX_NAME, DURABILITY_DOCUMENT_COUNT, DURABILITY_DOCUMENT_ID_PREFIX, DURABILITY_DOCUMENT_CONTENT)
 		if err != nil {
-			return fmt.Errorf("error creating durability documents: %v", err)
+			return errorHandler(fmt.Errorf("error creating durability documents: %v", err), e.ClusterName)
 		}
 	}
 
@@ -208,7 +227,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	// Get all documents
 	files, err := e.getAllIndexDocuments(DURABILITY_INDEX_NAME)
 	if err != nil {
-		return fmt.Errorf("error retrieving durability documents: %v", err)
+		return errorHandler(fmt.Errorf("error retrieving durability documents: %v", err), e.ClusterName) 
 	}
 
 	// Init coorrupted items metric to 0
@@ -229,4 +248,12 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 
 	// Check all durability documents
 	return nil
+}
+
+// errorHandler increments the cluster error count metric if an error is present and returns the error.
+func errorHandler(err error, clusterName string) error {
+	if err != nil {
+		clusterErrorsCount.WithLabelValues(clusterName).Inc()
+	}
+	return err
 }

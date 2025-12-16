@@ -17,6 +17,7 @@ type OpenSearchEndpoint struct {
 	Name         string
 	ClusterLevel bool
 	ClusterName  string
+	PodName      string
 	Client       *opensearchapi.Client
 	ClientConfig opensearchapi.Config
 	Config       OpenSearchEndpointConfig

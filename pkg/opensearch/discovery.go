@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/topology"
@@ -64,9 +65,9 @@ func (conf *OpenSearchProbeConfig) buildOpenSearchEndpoint(logger log.Logger, cl
 	}
 
 	endpoint := &OpenSearchEndpoint{
-		Name: entry.Address,
-
-		ClusterName:  clusterName,
+		Name:         entry.Address,
+		PodName:      entry.Meta["k8s_pod"],
+		ClusterName:  conf.valueFromTags("cluster_name", entry.Tags),
 		ClusterLevel: true,
 		ClientConfig: clientConfig,
 		Config:       conf.OpenSearchEndpointConfig,
@@ -97,6 +98,17 @@ func (conf *OpenSearchProbeConfig) generateNodeEndpointFromEntry(logger log.Logg
 		clusterName = entry.Address
 	}
 	return conf.buildOpenSearchEndpoint(logger, clusterName, entry)
+}
+
+
+func (conf *OpenSearchProbeConfig) valueFromTags(prefix string, serviceTags []string) string {
+	for _, tag := range serviceTags {
+		splitted := strings.SplitN(tag, "-", 2)
+		if splitted[0] == prefix {
+			return splitted[1]
+		}
+	}
+	return ""
 }
 
 func (conf *OpenSearchProbeConfig) TopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {

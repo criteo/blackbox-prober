@@ -7,8 +7,8 @@ discovery:
     scheme: https
     allow_stale: true
     refresh_interval: 30s
-    services:
-    - opensearch-nosqltest 
+    tags:
+    - maintenance-opensearch
 client_config:
   ### AUTH ###
   # Enable authentication

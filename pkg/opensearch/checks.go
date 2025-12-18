@@ -119,7 +119,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	documentID := LATENCY_DOCUMENT_ID_PREFIX + uuid.New().String()
 
 	// CREATE DOCUMENT
-	labels := []string{"put", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
+	labels := []string{"index", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
 	opPut := func() error {
 		return e.insertDocument(LATENCY_INDEX_NAME, documentID, LATENCY_DOCUMENT_CONTENT)
 	}
@@ -148,6 +148,26 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	err = ObserveOpLatency(opGet, labels)
 	if err != nil {
 		return errorHandler(fmt.Errorf("record get failed for: %s", documentID), e.ClusterName)
+	}
+
+	// COUNT DOCUMENTS
+	labels = []string{"count", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
+	opCount := func() error {
+		count, err := e.countDocuments(LATENCY_INDEX_NAME)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return fmt.Errorf("document count is zero after inserting a document")
+		}
+
+		level.Debug(e.Logger).Log("msg", fmt.Sprintf("document count: %d", count))
+
+		return nil
+	}
+	err = ObserveOpLatency(opCount, labels)
+	if err != nil {
+		return errorHandler(fmt.Errorf("record count failed for: %s", documentID), e.ClusterName)
 	}
 
 	// DELETE DOCUMENT

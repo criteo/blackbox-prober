@@ -286,6 +286,33 @@ func (e *OpenSearchEndpoint) getAllIndexDocuments(indexName string) (map[string]
 	return files, nil
 }
 
+
+func (e *OpenSearchEndpoint) countDocuments(indexName string) (int64, error) {
+	ctx := context.Background()
+	response, err := e.Client.Indices.Count(ctx, &opensearchapi.IndicesCountReq{
+		Indices: []string{indexName},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("error counting documents in index %s: %v", indexName, err)
+	}
+
+	if response.Inspect().Response.StatusCode != 200 {
+		return 0, fmt.Errorf("unexpected status code %d when counting documents in index %s", response.Inspect().Response.StatusCode, indexName)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(response.Inspect().Response.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("error decoding response body: %v", err)
+	}
+
+	count, ok := result["count"].(float64)
+	if !ok {
+		return 0, fmt.Errorf("error retrieving count from response")
+	}
+
+	return int64(count), nil
+}
+
 func (e *OpenSearchEndpoint) deleteDocument(indexName string, documentID string) error {
 	ctx := context.Background()
 	response, err := e.Client.Document.Delete(ctx, opensearchapi.DocumentDeleteReq{

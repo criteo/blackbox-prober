@@ -59,6 +59,11 @@ var opDurabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Help: "Total number of corrupted items in the durability index",
 }, []string{"cluster"})
 
+var indexHealth = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: OSSuffix + "_index_health_status",
+	Help: "Health status of the latency index (green is 0, yellow is 1 and red is 2)",
+}, []string{"cluster", "index"})
+
 var nodeAvailability = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: OSSuffix + "_node_availability",
 	Help: "Availability status of nodes in the cluster (1 = available, 0 = unavailable)",
@@ -96,7 +101,7 @@ func LatencyPrepare(p topology.ProbeableEndpoint) error {
 	// Check if latency index exists, create it if it does not
 	exists, err := e.checkIndexExists(LATENCY_INDEX_NAME)
 	if err != nil {
-		return	errorHandler(fmt.Errorf("error checking if latency index exists: %v", err), e.ClusterName)
+		return errorHandler(fmt.Errorf("error checking if latency index exists: %v", err), e.ClusterName)
 	}
 	if !exists {
 		level.Info(e.Logger).Log("msg", fmt.Sprintf("Latency index %s does not exist, creating it", LATENCY_INDEX_NAME))
@@ -182,6 +187,13 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	}
 	level.Debug(e.Logger).Log("msg", fmt.Sprintf("document delete: %s", documentID))
 
+	// INDEX HEALTH
+	health, err := e.getIndexHealth(LATENCY_INDEX_NAME)
+	if err != nil {
+		return errorHandler(fmt.Errorf("failed to get index health for %s: %s", e.Name, err), e.ClusterName)
+	}
+	indexHealth.WithLabelValues(e.ClusterName, LATENCY_INDEX_NAME).Set(health)
+
 	// CAT HEALTH
 	labels = []string{"cat_health", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
 	labelsAvailability := []string{e.ClusterName, e.Name, e.PodName}
@@ -247,7 +259,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	// Get all documents
 	files, err := e.getAllIndexDocuments(DURABILITY_INDEX_NAME)
 	if err != nil {
-		return errorHandler(fmt.Errorf("error retrieving durability documents: %v", err), e.ClusterName) 
+		return errorHandler(fmt.Errorf("error retrieving durability documents: %v", err), e.ClusterName)
 	}
 
 	// Init coorrupted items metric to 0
@@ -261,6 +273,13 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 			opDurabilityCorruptedItems.WithLabelValues(labels...).Inc()
 		}
 	}
+
+	// INDEX HEALTH
+	health, err := e.getIndexHealth(DURABILITY_INDEX_NAME)
+	if err != nil {
+		return errorHandler(fmt.Errorf("failed to get index health for %s: %s", e.Name, err), e.ClusterName)
+	}
+	indexHealth.WithLabelValues(e.ClusterName, DURABILITY_INDEX_NAME).Set(health)
 
 	// Update metrics
 	opDurabilityExpectedItems.WithLabelValues(labels...).Set(float64(DURABILITY_DOCUMENT_COUNT))

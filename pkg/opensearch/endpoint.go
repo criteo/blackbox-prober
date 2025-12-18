@@ -126,6 +126,48 @@ func (e *OpenSearchEndpoint) createIndex(indexName string, numberOfShards int, n
 	return nil
 }
 
+// getIndexHealth retrieves the health status of the specified index in OpenSearch.
+func (e *OpenSearchEndpoint) getIndexHealth(indexName string) (float64, error) {
+	ctx := context.Background()
+
+	// Use the Cat Indices API to get health status for the index
+	response, err := e.Client.Cat.Indices(ctx, &opensearchapi.CatIndicesReq{
+		Indices: []string{indexName},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("error getting index health for %s: %v", indexName, err)
+	}
+	defer response.Inspect().Response.Body.Close()
+
+	if response.Inspect().Response.StatusCode != 200 {
+		return 0, fmt.Errorf("unexpected status code %d when getting index health for %s", response.Inspect().Response.StatusCode, indexName)
+	}
+
+	var indicesInfo []map[string]interface{}
+	if err := json.NewDecoder(response.Inspect().Response.Body).Decode(&indicesInfo); err != nil {
+		return 0, fmt.Errorf("error decoding index health response: %v", err)
+	}
+	if len(indicesInfo) == 0 {
+		return 0, fmt.Errorf("no health info found for index %s", indexName)
+	}
+
+	health, _ := indicesInfo[0]["health"].(string)
+
+	var healthValue float64
+	switch health {
+	case "green":
+		healthValue = 0
+	case "yellow":
+		healthValue = 1
+	case "red":
+		healthValue = 2
+	default:
+		return 0, fmt.Errorf("unknown index health status '%s' for %s", health, e.Name)
+	}
+
+	return healthValue, nil
+}
+
 func (e *OpenSearchEndpoint) insertDocument(indexName string, documentID string, documentContent string) error {
 	ctx := context.Background()
 	doc := map[string]interface{}{
@@ -285,7 +327,6 @@ func (e *OpenSearchEndpoint) getAllIndexDocuments(indexName string) (map[string]
 
 	return files, nil
 }
-
 
 func (e *OpenSearchEndpoint) countDocuments(indexName string) (int64, error) {
 	ctx := context.Background()

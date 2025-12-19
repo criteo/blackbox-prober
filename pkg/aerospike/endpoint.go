@@ -2,7 +2,6 @@ package aerospike
 
 import (
 	"crypto/tls"
-	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -18,17 +17,19 @@ var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 }, []string{"cluster", "probe_endpoint", "namespace", "name"})
 
 type AerospikeEndpoint struct {
-	Name         string
-	ClusterLevel bool
-	ClusterName  string
-	Client       *as.Client
-	Config       AerospikeClientConfig
-	Logger       log.Logger
-	Namespace    string
+	Name string
+	// indicates if endpoint should be used for cluster checks or for node checks
+	ClusterLevel  bool
+	Client        *as.Client
+	ClusterConfig *AerospikeClusterConfig
+	Logger        log.Logger
+	Namespace     string
+	// Contact point
+	Seed as.Host
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
-	return fmt.Sprintf("%s/%s/ns:%s", e.ClusterName, e.Name, e.Namespace)
+	return e.GetName()
 }
 
 func (e *AerospikeEndpoint) GetName() string {
@@ -49,16 +50,22 @@ func (e *AerospikeEndpoint) setMetricFromASStats(stats map[string]interface{}, k
 	if !ok {
 		return
 	}
-	clusterStats.WithLabelValues(e.ClusterName, e.GetName(), e.Namespace, key).Set(value)
+	clusterStats.WithLabelValues(e.ClusterConfig.clusterName, e.GetName(), e.Namespace, key).Set(value)
 }
 
 func (e *AerospikeEndpoint) refreshMetrics() {
+	// endpoint need to be connected
+	// and we export on client metrics only for cluster endpoint to keep number of metrics low
+	if e.Client == nil || !e.IsCluster() {
+		return
+	}
+
 	stats, err := e.Client.Stats()
-	cluster_stats := stats["cluster-aggregated-stats"].(map[string]interface{})
 	if err != nil {
 		level.Error(e.Logger).Log("msg", "Failed to pull metrics from aerospike client", "err", err)
 		return
 	}
+	cluster_stats := stats["cluster-aggregated-stats"].(map[string]interface{})
 	e.setMetricFromASStats(cluster_stats, "open-connections")
 	e.setMetricFromASStats(cluster_stats, "closed-connections")
 	e.setMetricFromASStats(cluster_stats, "connections-attempts")
@@ -73,34 +80,36 @@ func (e *AerospikeEndpoint) refreshMetrics() {
 	e.setMetricFromASStats(cluster_stats, "tends-failed")
 }
 
-func (e *AerospikeEndpoint) Connect() error {
+func (e *AerospikeEndpoint) DoConnect() error {
 	clientPolicy := as.NewClientPolicy()
-	clientPolicy.ConnectionQueueSize = e.Config.genericConfig.ConnectionQueueSize
-	clientPolicy.OpeningConnectionThreshold = e.Config.genericConfig.OpeningConnectionThreshold
-	clientPolicy.MinConnectionsPerNode = e.Config.genericConfig.MinConnectionsPerNode
-	clientPolicy.TendInterval = e.Config.genericConfig.TendInterval
+	if e.ClusterLevel {
+		clientPolicy.ConnectionQueueSize = e.ClusterConfig.genericConfig.ConnectionQueueSize
+		clientPolicy.OpeningConnectionThreshold = e.ClusterConfig.genericConfig.OpeningConnectionThreshold
+		clientPolicy.MinConnectionsPerNode = e.ClusterConfig.genericConfig.MinConnectionsPerNode
+	}
+	clientPolicy.TendInterval = e.ClusterConfig.genericConfig.TendInterval
 
-	if e.Config.tlsEnabled {
+	if e.ClusterConfig.tlsEnabled {
 		// Setup TLS Config
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify:       e.Config.genericConfig.TLSSkipVerify,
+			InsecureSkipVerify:       e.ClusterConfig.genericConfig.TLSSkipVerify,
 			PreferServerCipherSuites: true,
 		}
 		clientPolicy.TlsConfig = tlsConfig
 	}
 
-	if e.Config.authEnabled {
-		if e.Config.genericConfig.AuthExternal {
+	if e.ClusterConfig.authEnabled {
+		if e.ClusterConfig.genericConfig.AuthExternal {
 			clientPolicy.AuthMode = as.AuthModeExternal
 		} else {
 			clientPolicy.AuthMode = as.AuthModeInternal
 		}
 
-		clientPolicy.User = e.Config.username
-		clientPolicy.Password = e.Config.password
+		clientPolicy.User = e.ClusterConfig.username
+		clientPolicy.Password = e.ClusterConfig.password
 	}
 
-	client, err := as.NewClientWithPolicyAndHost(clientPolicy, &e.Config.host)
+	client, err := as.NewClientWithPolicyAndHost(clientPolicy, &e.Seed)
 	if err != nil {
 		return err
 	}
@@ -109,14 +118,30 @@ func (e *AerospikeEndpoint) Connect() error {
 	return nil
 }
 
+func (e *AerospikeEndpoint) Connect() error {
+	if !e.IsCluster() {
+		// skip auto-connect for node endpoints
+		// handling connection directly in checks to improve parallelism
+		return nil
+	}
+
+	err := e.DoConnect()
+	if err == nil {
+		e.Refresh()
+	}
+
+	return err
+}
+
 func (e *AerospikeEndpoint) Refresh() error {
 	e.refreshMetrics()
 	return nil
 }
 
 func (e *AerospikeEndpoint) Close() error {
-	if e != nil && e.Client != nil {
+	if e.Client != nil {
 		e.Client.Close()
+		e.Client = nil
 	}
 	return nil
 }

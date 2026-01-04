@@ -241,7 +241,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 
 	policy := as.NewPolicy()
 	policy.MaxRetries = 2                                     // 2 is default Client value in v7
-	policy.ReplicaPolicy = as.MASTER                          // Read are always done on master (SEQUENCE is default Client value in v7)
+	policy.ReplicaPolicy = as.SEQUENCE                        // SEQUENCE is default Client value (alternate across master/replica in case of errors)
 	policy.TotalTimeout = e.Config.genericConfig.TotalTimeout // 0 is default Client value in v7
 	keyRange := e.Config.genericConfig.DurabilityKeyTotal
 	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix

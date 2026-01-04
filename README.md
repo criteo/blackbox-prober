@@ -6,14 +6,14 @@ The blackbox prober is both a framework for probes and also the implementation o
 following databases:
 | Database  | Maturity |
 | --------- | -------- |
-| Aerospike | RC |
+| Aerospike | GA |
 | Milvus | Alpha |
+| Opensearch | Alpha |
 
 Coming soon:
 
 | Database  |
 | --------- |
-| Opensearch |
 | Cassandra/ScyllaDB |
 
 

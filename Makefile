@@ -5,6 +5,8 @@ IMG ?= blackbox-prober:latest
 test:
 		go test ./...
 
+build: build_aerospike build_milvus build_opensearch
+
 build_aerospike:
 		CGO_ENABLED=0 go build -o build/aerospike_probe probes/aerospike/main.go
 

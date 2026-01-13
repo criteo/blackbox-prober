@@ -5,7 +5,7 @@ IMG ?= blackbox-prober:latest
 test:
 		go test ./...
 
-build: build_aerospike build_milvus build_opensearch
+build: build_aerospike build_milvus build_opensearch build_triton
 
 build_aerospike:
 		CGO_ENABLED=0 go build -o build/aerospike_probe probes/aerospike/main.go
@@ -34,7 +34,7 @@ build_linux_triton:
 refresh-triton-client:
 	bash scripts/generate-triton-client.sh
 
-build_linux: build_linux_aerospike build_linux_milvus build_linux_opensearch
+build_linux: build_linux_aerospike build_linux_milvus build_linux_opensearch build_linux_triton
 
 lint:
 		gofmt -d -e -s pkg/**/*.go probes/**/*.go

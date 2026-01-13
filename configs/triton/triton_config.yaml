@@ -1,0 +1,18 @@
+discovery:
+  consul_sd_config:
+    server: consul-relay.fr4.preprod.crto.in
+    services: # Static service names
+      - "my-triton-grpc"
+    tags: # OR filter by Consul tags (services must have all tags)
+      - "triton"
+      - "production"
+    refresh_interval: 30s
+
+client_config:
+  timeout: 30s # gRPC operation timeout
+  batch_size: 1 # Batch size for inference requests
+
+checks_configs:
+  latency_check:
+    enable: true
+    interval: 500ms

@@ -100,7 +100,6 @@ func (conf *OpenSearchProbeConfig) generateNodeEndpointFromEntry(logger log.Logg
 	return conf.buildOpenSearchEndpoint(logger, clusterName, entry)
 }
 
-
 func (conf *OpenSearchProbeConfig) valueFromTags(prefix string, serviceTags []string) string {
 	for _, tag := range serviceTags {
 		splitted := strings.SplitN(tag, "-", 2)

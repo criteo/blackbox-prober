@@ -15,4 +15,4 @@ client_config:
 checks_configs:
   latency_check:
     enable: true
-    interval: 500ms
+    interval: 1ms

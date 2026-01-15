@@ -206,6 +206,28 @@ func (e *TritonEndpoint) GetModels() map[string]*ModelInfo {
 	return result
 }
 
+// CanProbe checks if a model can be probed with random data.
+// Returns false with a reason if the model should be skipped.
+func CanProbe(modelInfo *ModelInfo) (bool, string) {
+	for _, input := range modelInfo.Metadata.GetInputs() {
+		shape := input.GetShape()
+
+		// Skip BYTES with single dimension - likely expects JSON dict or image data
+		// BYTES with multiple dimensions (e.g., [-1, 16]) are string arrays, OK to probe
+		if input.GetDatatype() == "BYTES" && len(shape) == 1 {
+			return false, fmt.Sprintf("input %q has BYTES[1] (likely expects JSON or image)", input.GetName())
+		}
+
+		// Skip dynamic shapes beyond batch dimension
+		for i, dim := range shape {
+			if i > 0 && dim == -1 {
+				return false, fmt.Sprintf("input %q has dynamic shape at index %d", input.GetName(), i)
+			}
+		}
+	}
+	return true, ""
+}
+
 // Infer performs an inference request against a model and returns the response.
 // This is a reusable building block for various checks.
 func (e *TritonEndpoint) Infer(modelInfo *ModelInfo, batchSize int64) (*client.ModelInferResponse, error) {

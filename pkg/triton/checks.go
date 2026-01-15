@@ -61,6 +61,12 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	}
 
 	for modelKey, modelInfo := range models {
+		// Skip models that can't be probed with random data
+		if canProbe, reason := CanProbe(modelInfo); !canProbe {
+			level.Debug(e.Logger).Log("msg", "skipping model", "model", modelKey, "reason", reason)
+			continue
+		}
+
 		labels := []string{"infer", e.Address, e.ClusterName, modelInfo.Name, e.PodName}
 
 		opInfer := func() error {

@@ -4,9 +4,10 @@ Blackbox probe for [NVIDIA Triton Inference Server](https://github.com/triton-in
 
 # TODOs
 
-- [ ] [BUG] Make integer input ranges configurable per model. Currently, integer types to avoid embedding index out-of-bounds errors
 - [ ] Add configurable metric labels from Consul `ServiceEntry.Meta` / `Node.Meta`
 - [ ] Make `RepositoryIndex` async (can take ~4s, currently blocks Refresh)
+- [ ] Support models expecting image inputs (BYTES with shape [1] containing JPEG/PNG) - those are skipped for now
+- [ ] Support models expecting JSON dict inputs (Python models with custom preprocessing) - those are skipped for now
 
 ## Configuration
 

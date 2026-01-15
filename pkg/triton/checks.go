@@ -51,7 +51,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 	models := e.GetModels()
 	if len(models) == 0 {
-		level.Warn(e.Logger).Log("msg", "no models available for latency check", "endpoint", e.Name)
+		level.Debug(e.Logger).Log("msg", "no models available for latency check", "endpoint", e.Name)
 		return nil
 	}
 

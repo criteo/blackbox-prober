@@ -4,6 +4,7 @@ package triton
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/rand"
 	"time"
 
@@ -61,45 +62,77 @@ func (g *Generator) GenerateTensorData(metadata *client.ModelMetadataResponse_Te
 		totalElements *= shape[i]
 	}
 
-	// Handle BYTES (string) datatype specially - Triton requires 4-byte length prefix per string
-	if datatype == "BYTES" {
-		return g.generateStringData(totalElements), nil
-	}
+	// Generate type-appropriate data
+	return g.generateTypedData(datatype, totalElements)
+}
 
-	elementSize, ok := dataTypeByteSizes[datatype]
-	if !ok {
+// generateTypedData routes to the appropriate generator for each data type.
+func (g *Generator) generateTypedData(datatype string, count int64) ([]byte, error) {
+	size, ok := dataTypeByteSizes[datatype]
+	if !ok && datatype != "BYTES" {
 		return nil, fmt.Errorf("unsupported datatype: %s", datatype)
 	}
 
-	totalBytes := totalElements * elementSize
-	return g.randomBytes(totalBytes), nil
+	switch datatype {
+	case "BYTES":
+		return g.randomStrings(count), nil
+	case "FP32":
+		return g.randomFloat32s(count), nil
+	case "FP64":
+		return g.randomFloat64s(count), nil
+	case "INT8", "INT16", "INT32", "INT64", "UINT8", "UINT16", "UINT32", "UINT64":
+		return g.randomSmallInts(count, int(size)), nil
+	default:
+		// BOOL, FP16: random bytes
+		return g.randomBytes(count * size), nil
+	}
 }
 
-// randomBytes generates a slice of random bytes of the specified size.
-func (g *Generator) randomBytes(size int64) []byte {
-	data := make([]byte, size)
-	// Read random bytes directly - more efficient than byte-by-byte
+// randomBytes fills a slice with random bytes.
+func (g *Generator) randomBytes(n int64) []byte {
+	data := make([]byte, n)
 	g.rng.Read(data)
 	return data
 }
 
-// generateStringData generates properly serialized string data for Triton BYTES datatype.
-// Triton string format: 4-byte little-endian uint32 length prefix + string bytes per element.
-// Generates numeric strings since many models expect parseable numbers
-func (g *Generator) generateStringData(numStrings int64) []byte {
+// randomSmallInts generates integers in [0, 255] to avoid embedding index errors.
+// Values are stored little-endian with only the first byte set.
+func (g *Generator) randomSmallInts(count int64, byteSize int) []byte {
+	data := make([]byte, count*int64(byteSize))
+	for i := int64(0); i < count; i++ {
+		data[i*int64(byteSize)] = byte(g.rng.Intn(256))
+	}
+	return data
+}
+
+// randomFloat32s generates FP32 floats in [0.0, 1.0).
+func (g *Generator) randomFloat32s(count int64) []byte {
+	data := make([]byte, count*4)
+	for i := int64(0); i < count; i++ {
+		binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(g.rng.Float32()))
+	}
+	return data
+}
+
+// randomFloat64s generates FP64 floats in [0.0, 1.0).
+func (g *Generator) randomFloat64s(count int64) []byte {
+	data := make([]byte, count*8)
+	for i := int64(0); i < count; i++ {
+		binary.LittleEndian.PutUint64(data[i*8:], math.Float64bits(g.rng.Float64()))
+	}
+	return data
+}
+
+// randomStrings generates Triton BYTES format: 4-byte length prefix + string content.
+// Uses numeric strings since many models expect parseable numbers.
+func (g *Generator) randomStrings(count int64) []byte {
 	var result []byte
-	for i := int64(0); i < numStrings; i++ {
-		// Generate a numeric string (many models expect string inputs to be parseable as numbers)
-		numValue := g.rng.Int63n(1000000) // Random number 0-999999
-		strBytes := []byte(fmt.Sprintf("%d", numValue))
-		strLen := len(strBytes)
-
-		// Write 4-byte little-endian length prefix
+	for i := int64(0); i < count; i++ {
+		str := []byte(fmt.Sprintf("%d", g.rng.Intn(1000000)))
 		lenPrefix := make([]byte, 4)
-		binary.LittleEndian.PutUint32(lenPrefix, uint32(strLen))
-
+		binary.LittleEndian.PutUint32(lenPrefix, uint32(len(str)))
 		result = append(result, lenPrefix...)
-		result = append(result, strBytes...)
+		result = append(result, str...)
 	}
 	return result
 }

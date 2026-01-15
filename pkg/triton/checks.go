@@ -26,6 +26,11 @@ var opFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help: "Total number of inference operations that resulted in failure",
 }, []string{"operation", "endpoint", "cluster", "model", "pod"})
 
+var modelActiveGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	Name: TritonSuffix + "_model_active",
+	Help: "Whether a model has external (non-probe) traffic. 1=active, 0=inactive",
+}, []string{"cluster", "endpoint", "model", "pod"})
+
 // ObserveOpLatency measures the duration of an operation and records it in the histogram.
 // Only successful operations are recorded in the latency histogram to avoid skewing metrics
 // with failure latencies (e.g., timeouts).
@@ -56,11 +61,21 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	}
 
 	batchSize := int64(1)
-	if e.Config != nil && e.Config.BatchSize > 0 {
-		batchSize = e.Config.BatchSize
+	onlyProbeActive := false
+	if e.Config != nil {
+		if e.Config.BatchSize > 0 {
+			batchSize = e.Config.BatchSize
+		}
+		onlyProbeActive = e.Config.OnlyProbeActiveModels
 	}
 
 	for modelKey, modelInfo := range models {
+		// Skip inactive models if activity filtering is enabled
+		if onlyProbeActive && !modelInfo.IsActive {
+			level.Debug(e.Logger).Log("msg", "skipping inactive model", "model", modelKey)
+			continue
+		}
+
 		// Skip models that can't be probed with random data
 		if canProbe, reason := CanProbe(modelInfo); !canProbe {
 			level.Debug(e.Logger).Log("msg", "skipping model", "model", modelKey, "reason", reason)

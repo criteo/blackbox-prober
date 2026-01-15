@@ -13,11 +13,20 @@ type TritonEndpointConfig struct {
 	Timeout time.Duration `yaml:"timeout,omitempty"`
 	// BatchSize for inference requests during latency checks
 	BatchSize int64 `yaml:"batch_size,omitempty"`
+
+	// Activity detection configuration
+	// OnlyProbeActiveModels skips probing models that have no external traffic
+	OnlyProbeActiveModels bool `yaml:"only_probe_active_models,omitempty"`
+	// ActivityMargin is the minimum number of external executions (beyond probe traffic)
+	// required to consider a model as active. Default is 0.
+	ActivityMargin int64 `yaml:"activity_margin,omitempty"`
 }
 
 var defaultTritonEndpointConfig = TritonEndpointConfig{
-	Timeout:   30 * time.Second,
-	BatchSize: 1,
+	Timeout:               30 * time.Second,
+	BatchSize:             1,
+	OnlyProbeActiveModels: false,
+	ActivityMargin:        0,
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

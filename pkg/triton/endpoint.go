@@ -20,6 +20,16 @@ type ModelInfo struct {
 	Version  string
 	Metadata *client.ModelMetadataResponse
 	Config   *client.ModelConfig
+
+	// Activity tracking fields
+	// CurrExecutionCount is the execution count from the last Refresh.
+	CurrExecutionCount uint64
+	// ProbeCountSinceRefresh tracks how many probes we made since last Refresh.
+	// This is reset to 0 after each Refresh.
+	ProbeCountSinceRefresh uint64
+	// IsActive indicates whether the model has external traffic beyond probe traffic.
+	// Defaults to true for new models until we have baseline data.
+	IsActive bool
 }
 
 // TritonEndpoint represents a single Triton Inference Server instance.
@@ -116,6 +126,11 @@ func (e *TritonEndpoint) Refresh() error {
 	ctx, cancel := e.contextWithTimeout()
 	defer cancel()
 
+	// Snapshot old models for activity comparison (before we overwrite)
+	e.modelsMu.RLock()
+	oldModels := e.models
+	e.modelsMu.RUnlock()
+
 	// Get list of all ready models
 	indexResp, err := e.grpcClient.RepositoryIndex(ctx, &client.RepositoryIndexRequest{
 		Ready: true, // Only get models that are ready for inference
@@ -154,6 +169,7 @@ func (e *TritonEndpoint) Refresh() error {
 			Name:    modelName,
 			Version: modelVersion,
 		})
+
 		if err != nil {
 			level.Warn(e.Logger).Log(
 				"msg", "Failed to get model config",
@@ -164,11 +180,17 @@ func (e *TritonEndpoint) Refresh() error {
 			continue
 		}
 
+		// Fetch execution statistics and compute activity
+		currExecCount, isActive := e.fetchModelActivity(ctx, modelKey, modelName, modelVersion, oldModels)
+
 		newModels[modelKey] = &ModelInfo{
-			Name:     modelName,
-			Version:  modelVersion,
-			Metadata: metadata,
-			Config:   configResp.GetConfig(),
+			Name:                   modelName,
+			Version:                modelVersion,
+			Metadata:               metadata,
+			Config:                 configResp.GetConfig(),
+			CurrExecutionCount:     currExecCount,
+			ProbeCountSinceRefresh: 0, // Reset for next cycle
+			IsActive:               isActive,
 		}
 	}
 
@@ -179,6 +201,68 @@ func (e *TritonEndpoint) Refresh() error {
 
 	level.Debug(e.Logger).Log("msg", "Refreshed model cache", "model_count", len(newModels))
 	return nil
+}
+
+// fetchModelActivity fetches model statistics and computes whether the model is active.
+// It also updates the activity metric.
+// Returns the current execution count and whether the model is active.
+func (e *TritonEndpoint) fetchModelActivity(ctx context.Context, modelKey, modelName, modelVersion string, oldModels map[string]*ModelInfo) (uint64, bool) {
+	// Fetch execution statistics
+	var currExecCount uint64
+	stats, err := e.grpcClient.ModelStatistics(ctx, &client.ModelStatisticsRequest{
+		Name:    modelName,
+		Version: modelVersion,
+	})
+	if err != nil {
+		level.Warn(e.Logger).Log(
+			"msg", "Failed to get model statistics",
+			"model", modelName,
+			"version", modelVersion,
+			"err", err,
+		)
+		// On error, assume active (we can't determine otherwise)
+		return 0, true
+	}
+	if len(stats.GetModelStats()) > 0 {
+		currExecCount = stats.GetModelStats()[0].GetExecutionCount()
+	}
+
+	// Compute activity
+	var prevExecCount, probeCount uint64
+	isFirstObservation := true
+	if oldModel, exists := oldModels[modelKey]; exists {
+		isFirstObservation = false
+		prevExecCount = oldModel.CurrExecutionCount
+		probeCount = oldModel.ProbeCountSinceRefresh
+	}
+
+	activityMargin := int64(0)
+	if e.Config != nil {
+		activityMargin = e.Config.ActivityMargin
+	}
+
+	isActive := ComputeModelActivity(prevExecCount, currExecCount, probeCount, activityMargin, isFirstObservation)
+
+	// Log activity for debugging
+	if !isFirstObservation {
+		level.Debug(e.Logger).Log(
+			"msg", "model activity computed",
+			"model", modelKey,
+			"prev_exec", prevExecCount,
+			"curr_exec", currExecCount,
+			"our_probes", probeCount,
+			"is_active", isActive,
+		)
+	}
+
+	// Update activity metric
+	activeVal := 0.0
+	if isActive {
+		activeVal = 1.0
+	}
+	modelActiveGauge.WithLabelValues(e.ClusterName, e.Address, modelKey, e.PodName).Set(activeVal)
+
+	return currExecCount, isActive
 }
 
 // Close terminates the gRPC connection to the Triton server.
@@ -203,6 +287,7 @@ func (e *TritonEndpoint) GetModels() map[string]*ModelInfo {
 	for k, v := range e.models {
 		result[k] = v
 	}
+
 	return result
 }
 
@@ -230,6 +315,7 @@ func CanProbe(modelInfo *ModelInfo) (bool, string) {
 
 // Infer performs an inference request against a model and returns the response.
 // This is a reusable building block for various checks.
+// It also increments the probe counter for activity tracking.
 func (e *TritonEndpoint) Infer(modelInfo *ModelInfo, batchSize int64) (*client.ModelInferResponse, error) {
 	request, err := e.generator.BuildInferRequest(
 		modelInfo.Metadata,
@@ -249,6 +335,9 @@ func (e *TritonEndpoint) Infer(modelInfo *ModelInfo, batchSize int64) (*client.M
 	if err != nil {
 		return nil, fmt.Errorf("inference failed for model %s: %w", modelInfo.Name, err)
 	}
+
+	// Track this inference for activity detection
+	modelInfo.ProbeCountSinceRefresh++
 
 	return resp, nil
 }

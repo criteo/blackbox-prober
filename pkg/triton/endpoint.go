@@ -3,7 +3,6 @@ package triton
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/criteo/blackbox-prober/pkg/discovery"
@@ -45,8 +44,7 @@ type TritonEndpoint struct {
 	generator  *Generator
 
 	// Cached metadata for ALL models (auto-discovered)
-	models   map[string]*ModelInfo
-	modelsMu sync.RWMutex
+	models map[string]*ModelInfo
 
 	Logger log.Logger
 	Config *TritonEndpointConfig
@@ -126,10 +124,9 @@ func (e *TritonEndpoint) Refresh() error {
 	ctx, cancel := e.contextWithTimeout()
 	defer cancel()
 
-	// Snapshot old models for activity comparison (before we overwrite)
-	e.modelsMu.RLock()
+	// This is safe making a reference because e.models is only replaced atomically (not mutated in place) and workers are synchronous.
+	// If this changes, we would need to make a shallow copy of the map here.
 	oldModels := e.models
-	e.modelsMu.RUnlock()
 
 	// Get list of all ready models
 	indexResp, err := e.grpcClient.RepositoryIndex(ctx, &client.RepositoryIndexRequest{
@@ -198,10 +195,7 @@ func (e *TritonEndpoint) Refresh() error {
 		}
 	}
 
-	// Update cached models atomically
-	e.modelsMu.Lock()
 	e.models = newModels
-	e.modelsMu.Unlock()
 
 	level.Debug(e.Logger).Log("msg", "Refreshed model cache", "model_count", len(newModels))
 	return nil
@@ -278,16 +272,11 @@ func (e *TritonEndpoint) Close() error {
 }
 
 // GetModels returns a copy of the cached model information.
-// Safe for concurrent access.
 func (e *TritonEndpoint) GetModels() map[string]*ModelInfo {
-	e.modelsMu.RLock()
-	defer e.modelsMu.RUnlock()
-
 	result := make(map[string]*ModelInfo, len(e.models))
 	for k, v := range e.models {
 		result[k] = v
 	}
-
 	return result
 }
 

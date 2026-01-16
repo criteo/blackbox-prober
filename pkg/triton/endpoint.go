@@ -331,14 +331,6 @@ func (e *TritonEndpoint) Infer(modelInfo *ModelInfo, batchSize int64) (*client.M
 	return resp, nil
 }
 
-// GetGRPCClient returns the gRPC client for making inference requests.
-//func (e *TritonEndpoint) GetGRPCClient() client.GRPCInferenceServiceClient {
-//	return e.grpcClient
-//}
-// GetGenerator returns the Generator for building inference requests.
-//func (e *TritonEndpoint) GetGenerator() *Generator {
-//	return e.generator
-
 // contextWithTimeout returns a context with the configured timeout.
 func (e *TritonEndpoint) contextWithTimeout() (context.Context, context.CancelFunc) {
 	timeout := 30 * time.Second

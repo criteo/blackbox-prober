@@ -183,7 +183,7 @@ func (e *TritonEndpoint) Refresh() error {
 		// Fetch execution statistics and compute activity (only if enabled)
 		var currExecCount uint64
 		isActive := true
-		if e.Config != nil && e.Config.SkipInactiveModels.Enabled {
+		if e.Config != nil && e.Config.SkipInactiveModels.Enable {
 			currExecCount, isActive = e.fetchModelActivity(ctx, modelKey, modelName, modelVersion, oldModels)
 		}
 

@@ -66,7 +66,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		if e.Config.BatchSize > 0 {
 			batchSize = e.Config.BatchSize
 		}
-		onlyProbeActive = e.Config.SkipInactiveModels.Enabled
+		onlyProbeActive = e.Config.SkipInactiveModels.Enable
 	}
 
 	for modelKey, modelInfo := range models {

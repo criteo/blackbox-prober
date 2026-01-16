@@ -12,9 +12,9 @@ import (
 
 // SkipInactiveModelsConfig configures skipping of inactive models.
 type SkipInactiveModelsConfig struct {
-	// Enabled activates inactive model filtering.
+	// Enable activates inactive model filtering.
 	// When true, models with no external traffic will be skipped.
-	Enabled bool `yaml:"enabled,omitempty"`
+	Enable bool `yaml:"enable,omitempty"`
 	// ProbeReplicas is the number of probe instances running against the same Triton servers.
 	// Used to calculate expected probe traffic. Default is 1.
 	ProbeReplicas int64 `yaml:"probe_replicas,omitempty"`
@@ -37,7 +37,7 @@ var defaultTritonEndpointConfig = TritonEndpointConfig{
 	Timeout:   30 * time.Second,
 	BatchSize: 1,
 	SkipInactiveModels: SkipInactiveModelsConfig{
-		Enabled:       false,
+		Enable:        false,
 		ProbeReplicas: 2,
 		Margin:        5,
 	},
@@ -85,7 +85,7 @@ func (c *TritonProbeConfig) LogConfig(logger log.Logger) {
 
 	// Skip inactive models
 	skipInactiveStatus := "disabled"
-	if c.TritonEndpointConfig.SkipInactiveModels.Enabled {
+	if c.TritonEndpointConfig.SkipInactiveModels.Enable {
 		skipInactiveStatus = fmt.Sprintf("enabled (replicas=%d, margin=%d)",
 			c.TritonEndpointConfig.SkipInactiveModels.ProbeReplicas,
 			c.TritonEndpointConfig.SkipInactiveModels.Margin)

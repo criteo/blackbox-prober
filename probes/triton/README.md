@@ -51,7 +51,7 @@ Since the **probe itself generates inference traffic**, we need to distinguish b
 ```yaml
 client_config:
   skip_inactive_models:
-    enabled: true         # Enable inactive model filtering
+    enable: true          # Enable inactive model filtering
     probe_replicas: 2     # Number of probe instances running against same Triton servers
     margin: 5             # Safety buffer for external executions
 ```

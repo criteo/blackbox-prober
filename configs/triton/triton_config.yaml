@@ -1,6 +1,6 @@
 discovery:
   consul_sd_config:
-    server: consul-relay.fr4.preprod.crto.in
+    server: localhost:8500
     services: # Static service names
       - "my-triton-grpc"
     tags: # OR filter by Consul tags (services must have all tags)

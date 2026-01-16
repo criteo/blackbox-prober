@@ -11,8 +11,12 @@ discovery:
 client_config:
   timeout: 30s # gRPC operation timeout
   batch_size: 1 # Batch size for inference requests
+  skip_inactive_models:
+    enabled: false        # Skip models with no external traffic
+    probe_replicas: 2     # Number of probe instances (for accurate traffic estimation)
+    margin: 5             # Safety buffer for external executions
 
 checks_configs:
   latency_check:
     enable: true
-    interval: 1ms
+    interval: 500ms

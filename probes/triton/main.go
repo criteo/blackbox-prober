@@ -19,7 +19,6 @@ import (
 )
 
 func main() {
-	// CLI Flags
 	commonCfg := common.ProbeConfig{
 		LogConfig: promlog.Config{},
 	}
@@ -33,7 +32,6 @@ func main() {
 		os.Exit(2)
 	}
 
-	// Init logger
 	logger := commonCfg.GetLogger()
 
 	// Parse config file
@@ -44,7 +42,6 @@ func main() {
 		os.Exit(2)
 	}
 
-	// Metrics/pprof server
 	commonCfg.StartHttpServer()
 
 	// Discovery: Consul service discovery
@@ -56,10 +53,8 @@ func main() {
 	}
 	go discoverer.Start()
 
-	// Scheduler: register checks and start probing
 	p := scheduler.NewProbingScheduler(log.With(logger), topo)
 
-	//Register latency check as a NODE check (runs on each Triton server instance)
 	if config.TritonChecksConfigs.LatencyCheckConfig.Enable {
 		p.RegisterNewNodeCheck(scheduler.Check{
 			Name:       "latency_check",

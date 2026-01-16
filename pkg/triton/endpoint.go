@@ -24,11 +24,11 @@ type ModelInfo struct {
 	// Activity tracking fields
 	// CurrExecutionCount is the execution count from the last Refresh.
 	CurrExecutionCount uint64
-	// ProbeCountSinceRefresh tracks how many probes we made since last Refresh.
-	// This is reset to 0 after each Refresh.
-	ProbeCountSinceRefresh uint64
+	// ProbeCount tracks how many probes THIS instance made since last Refresh.
+	// Reset to 0 after each Refresh.
+	ProbeCount uint64
 	// IsActive indicates whether the model has external traffic beyond probe traffic.
-	// Defaults to true for new models until we have baseline data.
+	// Defaults to true for new models or when activity detection is disabled.
 	IsActive bool
 }
 
@@ -180,17 +180,21 @@ func (e *TritonEndpoint) Refresh() error {
 			continue
 		}
 
-		// Fetch execution statistics and compute activity
-		currExecCount, isActive := e.fetchModelActivity(ctx, modelKey, modelName, modelVersion, oldModels)
+		// Fetch execution statistics and compute activity (only if enabled)
+		var currExecCount uint64
+		isActive := true
+		if e.Config != nil && e.Config.SkipInactiveModels.Enabled {
+			currExecCount, isActive = e.fetchModelActivity(ctx, modelKey, modelName, modelVersion, oldModels)
+		}
 
 		newModels[modelKey] = &ModelInfo{
-			Name:                   modelName,
-			Version:                modelVersion,
-			Metadata:               metadata,
-			Config:                 configResp.GetConfig(),
-			CurrExecutionCount:     currExecCount,
-			ProbeCountSinceRefresh: 0, // Reset for next cycle
-			IsActive:               isActive,
+			Name:               modelName,
+			Version:            modelVersion,
+			Metadata:           metadata,
+			Config:             configResp.GetConfig(),
+			CurrExecutionCount: currExecCount,
+			ProbeCount:         0, // Reset for next cycle
+			IsActive:           isActive,
 		}
 	}
 
@@ -227,33 +231,29 @@ func (e *TritonEndpoint) fetchModelActivity(ctx context.Context, modelKey, model
 		currExecCount = stats.GetModelStats()[0].GetExecutionCount()
 	}
 
-	// Compute activity
-	var prevExecCount, probeCount uint64
-	isFirstObservation := true
-	if oldModel, exists := oldModels[modelKey]; exists {
-		isFirstObservation = false
-		prevExecCount = oldModel.CurrExecutionCount
-		probeCount = oldModel.ProbeCountSinceRefresh
+	// Check if this is the first observation (no baseline)
+	oldModel, exists := oldModels[modelKey]
+	if !exists {
+		// First observation - start inactive, next refresh will determine activity
+		modelActiveGauge.WithLabelValues(e.ClusterName, e.Address, modelKey, e.PodName).Set(0.0)
+		return currExecCount, false
 	}
 
-	activityMargin := int64(0)
-	if e.Config != nil {
-		activityMargin = e.Config.ActivityMargin
-	}
+	// Expected probe count = this instance's probes × number of replicas
+	expectedProbeCount := oldModel.ProbeCount * uint64(e.Config.SkipInactiveModels.ProbeReplicas)
 
-	isActive := ComputeModelActivity(prevExecCount, currExecCount, probeCount, activityMargin, isFirstObservation)
+	isActive := ComputeModelActivity(oldModel.CurrExecutionCount, currExecCount, expectedProbeCount, e.Config.SkipInactiveModels.Margin)
 
 	// Log activity for debugging
-	if !isFirstObservation {
-		level.Debug(e.Logger).Log(
-			"msg", "model activity computed",
-			"model", modelKey,
-			"prev_exec", prevExecCount,
-			"curr_exec", currExecCount,
-			"our_probes", probeCount,
-			"is_active", isActive,
-		)
-	}
+	level.Debug(e.Logger).Log(
+		"msg", "model activity computed",
+		"model", modelKey,
+		"prev_exec", oldModel.CurrExecutionCount,
+		"curr_exec", currExecCount,
+		"probe_count", oldModel.ProbeCount, // this instance's probes count since last Refresh
+		"expected_total_probes", expectedProbeCount, // expected total probes count since last Refresh (this instance's probes count * number of replicas of the probe)
+		"is_active", isActive,
+	)
 
 	// Update activity metric
 	activeVal := 0.0
@@ -315,7 +315,6 @@ func CanProbe(modelInfo *ModelInfo) (bool, string) {
 
 // Infer performs an inference request against a model and returns the response.
 // This is a reusable building block for various checks.
-// It also increments the probe counter for activity tracking.
 func (e *TritonEndpoint) Infer(modelInfo *ModelInfo, batchSize int64) (*client.ModelInferResponse, error) {
 	request, err := e.generator.BuildInferRequest(
 		modelInfo.Metadata,
@@ -336,8 +335,8 @@ func (e *TritonEndpoint) Infer(modelInfo *ModelInfo, batchSize int64) (*client.M
 		return nil, fmt.Errorf("inference failed for model %s: %w", modelInfo.Name, err)
 	}
 
-	// Track this inference for activity detection
-	modelInfo.ProbeCountSinceRefresh++
+	// Track probe count for activity detection
+	modelInfo.ProbeCount++
 
 	return resp, nil
 }

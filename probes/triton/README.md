@@ -5,7 +5,6 @@ Blackbox probe for [NVIDIA Triton Inference Server](https://github.com/triton-in
 # TODOs
 
 - [ ] Add configurable metric labels from Consul `ServiceEntry.Meta` / `Node.Meta`
-- [ ] Make `RepositoryIndex` async (can take ~4s, currently blocks Refresh)
 - [ ] Support models expecting image inputs (BYTES with shape [1] containing JPEG/PNG) - those are skipped for now
 - [ ] Support models expecting JSON dict inputs (Python models with custom preprocessing) - those are skipped for now
 
@@ -35,6 +34,30 @@ The probe auto-generates valid inference requests by reading model metadata and 
 
 - **Supported data types**: `BOOL`, `INT8/16/32/64`, `UINT8/16/32/64`, `FP16/32/64`, `BYTES` (strings)
 - **Sequence batching**: Automatically adds `sequence_id`/`sequence_start` params for sequence models
+
+## Skip Inactive Models
+
+When enabled, the probe skips models that have no external traffic.
+
+### How It Works
+Since the **probe itself generates inference traffic**, we need to distinguish between our own probes and real external traffic. This is achieved by :
+1. Tracking the number of inferences we generate per model
+2. At each Refresh, query Triton's `ModelStatistics` for execution count for each model
+3. Comparing: `external_traffic = current_executions - (our_probes × probe_replicas) - margin`
+4. Model is considered active if `external_traffic > 0`
+
+### Configuration
+
+```yaml
+client_config:
+  skip_inactive_models:
+    enabled: true         # Enable inactive model filtering
+    probe_replicas: 2     # Number of probe instances running against same Triton servers
+    margin: 5             # Safety buffer for external executions
+```
+
+### Behavior
+- **Startup delay**: Models start inactive. It takes **one refresh interval** before active models are identified and probed
 
 ## Refreshing the Triton gRPC Client
 

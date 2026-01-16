@@ -1,10 +1,13 @@
 package triton
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 // SkipInactiveModelsConfig configures skipping of inactive models.
@@ -64,4 +67,36 @@ type TritonProbeConfig struct {
 // TritonChecksConfigs holds configuration for individual checks.
 type TritonChecksConfigs struct {
 	LatencyCheckConfig scheduler.CheckConfig `yaml:"latency_check,omitempty"`
+}
+
+// LogConfig logs a summary of the Triton probe configuration.
+func (c *TritonProbeConfig) LogConfig(logger log.Logger) {
+	level.Info(logger).Log("msg", "Triton Probe Configuration")
+
+	// Discovery settings
+	level.Info(logger).Log("msg", fmt.Sprintf("  Discovery: services=%v",
+		c.DiscoveryConfig.ConsulConfig.Services,
+	))
+
+	// Client settings
+	level.Info(logger).Log("msg", fmt.Sprintf("  Client: timeout=%s, batch_size=%d",
+		c.TritonEndpointConfig.Timeout,
+		c.TritonEndpointConfig.BatchSize))
+
+	// Skip inactive models
+	skipInactiveStatus := "disabled"
+	if c.TritonEndpointConfig.SkipInactiveModels.Enabled {
+		skipInactiveStatus = fmt.Sprintf("enabled (replicas=%d, margin=%d)",
+			c.TritonEndpointConfig.SkipInactiveModels.ProbeReplicas,
+			c.TritonEndpointConfig.SkipInactiveModels.Margin)
+	}
+	level.Info(logger).Log("msg", fmt.Sprintf("  Skip inactive models: %s", skipInactiveStatus))
+
+	// Checks
+	latencyStatus := "disabled"
+	if c.TritonChecksConfigs.LatencyCheckConfig.Enable {
+		latencyStatus = fmt.Sprintf("enabled (interval=%s)",
+			c.TritonChecksConfigs.LatencyCheckConfig.Interval)
+	}
+	level.Info(logger).Log("msg", fmt.Sprintf("  Latency check: %s", latencyStatus))
 }

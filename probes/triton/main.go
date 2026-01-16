@@ -42,6 +42,8 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Log configuration summary
+	config.LogConfig(logger)
 	commonCfg.StartHttpServer()
 
 	// Discovery: Consul service discovery

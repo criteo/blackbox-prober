@@ -31,6 +31,11 @@ var modelActiveGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Help: "Whether a model has external (non-probe) traffic. 1=active, 0=inactive",
 }, []string{"cluster", "endpoint", "model", "pod"})
 
+var modelStatsFetchFailures = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: TritonSuffix + "_model_stats_fetch_failures_total",
+	Help: "Total number of failures when fetching model statistics for activity detection",
+}, []string{"cluster", "endpoint", "model", "pod"})
+
 // ObserveOpLatency measures the duration of an operation and records it in the histogram.
 // Only successful operations are recorded in the latency histogram to avoid skewing metrics
 // with failure latencies (e.g., timeouts).

@@ -218,6 +218,7 @@ func (e *TritonEndpoint) fetchModelActivity(ctx context.Context, modelKey, model
 			"version", modelVersion,
 			"err", err,
 		)
+		modelStatsFetchFailures.WithLabelValues(e.ClusterName, e.Address, modelKey, e.PodName).Inc()
 		// On error, assume active (we can't determine otherwise)
 		return 0, true
 	}

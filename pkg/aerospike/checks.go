@@ -23,12 +23,12 @@ var opLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    ASSuffix + "_op_latency",
 	Help:    "Latency for operations",
 	Buckets: utils.MetricHistogramBuckets,
-}, []string{"operation", "endpoint", "namespace", "cluster", "id"})
+}, []string{"operation", "endpoint", "namespace", "node", "cluster", "id"})
 
 var opFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: ASSuffix + "_op_latency_failures",
 	Help: "Total number of operations that resulted in failure",
-}, []string{"operation", "endpoint", "namespace", "cluster", "id"})
+}, []string{"operation", "endpoint", "namespace", "node", "cluster", "id"})
 
 var durabilityExpectedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_durability_expected_items",
@@ -112,8 +112,13 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			return errors.Wrapf(err, "error when trying to find node for: %s", keyAsStr(key))
 		}
 
+		nodeInfo := &AerospikeNodeInfo{NodeName: node.GetName(), NodeFqdn: "unknown", PodName: "unknown"}
+		if ni, found := e.ClusterConfig.nodeInfoCache[node.GetName()]; found {
+			nodeInfo = ni
+		}
+
 		// PUT OPERATION
-		labels := []string{"put", node.GetHost().Name, e.Namespace, e.ClusterConfig.clusterName, node.GetName()}
+		labels := []string{"put", node.GetHost().Name, e.Namespace, nodeInfo.NodeFqdn, e.ClusterConfig.clusterName, node.GetName()}
 
 		opPut := func() error {
 			return e.Client.Put(policy, key, val)

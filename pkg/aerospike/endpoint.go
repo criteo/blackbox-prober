@@ -20,6 +20,7 @@ var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 type AerospikeEndpoint struct {
 	Name          string
 	ClusterLevel  bool
+	ClusterName   string
 	Client        *as.Client
 	ClusterConfig *AerospikeClientConfig
 	Logger        log.Logger

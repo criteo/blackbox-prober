@@ -6,7 +6,7 @@ import (
 	consul "github.com/hashicorp/consul/api"
 )
 
-func TestToServiceEntry(t *testing.T) {
+func TestToServiceEntryNodeFqdnResolution(t *testing.T) {
 	tests := []struct {
 		name             string
 		entry            *consul.ServiceEntry
@@ -93,6 +93,81 @@ func TestToServiceEntry(t *testing.T) {
 			}
 			if result.Address != tt.entry.Service.Address {
 				t.Errorf("Address = %q, want %q", result.Address, tt.entry.Service.Address)
+			}
+		})
+	}
+}
+
+func TestToServiceEntryPodNameResolution(t *testing.T) {
+	tests := []struct {
+		name            string
+		entry           *consul.ServiceEntry
+		expectedPodName string
+	}{
+		{
+			name: "pod name from k8s_pod service meta",
+			entry: &consul.ServiceEntry{
+				Node: &consul.Node{},
+				Service: &consul.AgentService{
+					Service: "my-service",
+					Tags:    []string{"tag1"},
+					Meta:    map[string]string{"key": "value", "k8s_pod": "test-pod"},
+					Port:    8080,
+					Address: "10.0.0.1",
+				},
+			},
+			expectedPodName: "test-pod",
+		},
+		{
+			name: "fallback to external-k8s-ref-name",
+			entry: &consul.ServiceEntry{
+				Node: &consul.Node{},
+				Service: &consul.AgentService{
+					Service: "my-service",
+					Tags:    []string{"tag1"},
+					Meta:    map[string]string{"key": "value", "external-k8s-ref-name": "test-pod"},
+					Port:    8080,
+					Address: "10.0.0.1",
+				},
+			},
+			expectedPodName: "test-pod",
+		},
+		{
+			name: "fqdn takes priority over external-k8s-node-name",
+			entry: &consul.ServiceEntry{
+				Node: &consul.Node{},
+				Service: &consul.AgentService{
+					Service: "my-service",
+					Tags:    []string{"tag1"},
+					Meta:    map[string]string{"k8s_pod": "test-pod", "external-k8s-ref-name": "test-pod"},
+					Port:    8080,
+					Address: "10.0.0.1",
+				},
+			},
+			expectedPodName: "test-pod",
+		},
+		{
+			name: "empty when neither present",
+			entry: &consul.ServiceEntry{
+				Node: &consul.Node{},
+				Service: &consul.AgentService{
+					Service: "my-service",
+					Tags:    []string{},
+					Meta:    map[string]string{},
+					Port:    8080,
+					Address: "10.0.0.1",
+				},
+			},
+			expectedPodName: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toServiceEntry(tt.entry)
+
+			if result.PodName != tt.expectedPodName {
+				t.Errorf("NodeFqdn = %q, want %q", result.NodeFqdn, tt.expectedPodName)
 			}
 		})
 	}

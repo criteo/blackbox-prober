@@ -23,12 +23,12 @@ var opLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    ASSuffix + "_op_latency",
 	Help:    "Latency for operations",
 	Buckets: utils.MetricHistogramBuckets,
-}, []string{"operation", "endpoint", "namespace", "node", "cluster", "id"})
+}, []string{"operation", "endpoint", "namespace", "node", "pod", "cluster", "id"})
 
 var opFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: ASSuffix + "_op_latency_failures",
 	Help: "Total number of operations that resulted in failure",
-}, []string{"operation", "endpoint", "namespace", "node", "cluster", "id"})
+}, []string{"operation", "endpoint", "namespace", "node", "pod", "cluster", "id"})
 
 var durabilityExpectedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_durability_expected_items",
@@ -97,8 +97,11 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	// Do not wait until timeout if connections cannot be open
 	policy.ExitFastOnExhaustedConnectionPool = e.ClusterConfig.genericConfig.ExitFastOnExhaustedConnectionPool
 
+	// FIXME: despite code intent we have no guarantee to hit all nodes of the cluster in a single iteration
+	// Instead we should generate one key per partition (number of partitions is known and constant with aerospike => 4096 partitions)
+	// These keys could be generated once in probe lifetime (partition id is the first 12 bits of the digest of the key) and then reused
+	// at each latency check.
 	for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
-		// TODO configurable set
 		key, as_err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 		if as_err != nil {
 			return as_err
@@ -112,14 +115,16 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			return errors.Wrapf(err, "error when trying to find node for: %s", keyAsStr(key))
 		}
 
-		nodeInfo := &AerospikeNodeInfo{NodeName: node.GetName(), NodeFqdn: "unknown", PodName: "unknown"}
-		if ni, found := e.ClusterConfig.nodeInfoCache[node.GetName()]; found {
+		// lookup node fqdn and pod name associated to aerospike endpoint
+		nodeInfo := &AerospikeNodeInfo{NodeName: node.GetHost().Name, NodeFqdn: "unknown", PodName: "unknown"}
+		if ni, found := e.ClusterConfig.nodeInfoCache[node.GetHost().Name]; found {
 			nodeInfo = ni
 		}
 
 		// PUT OPERATION
-		labels := []string{"put", node.GetHost().Name, e.Namespace, nodeInfo.NodeFqdn, e.ClusterConfig.clusterName, node.GetName()}
+		labels := []string{"put", node.GetHost().Name, e.Namespace, nodeInfo.NodeFqdn, nodeInfo.PodName, e.ClusterConfig.clusterName, node.GetName()}
 
+		// PUT OPERATION
 		opPut := func() error {
 			return e.Client.Put(policy, key, val)
 		}

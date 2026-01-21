@@ -24,6 +24,7 @@ type ServiceEntry struct {
 	Port     int
 	Address  string
 	NodeFqdn string
+	PodName  string
 }
 
 // Contains the keys/tags to use during the topology generation

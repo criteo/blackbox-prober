@@ -18,11 +18,12 @@ var DiscoveryFailureTotal = promauto.NewCounter(prometheus.CounterOpts{
 })
 
 type ServiceEntry struct {
-	Service string
-	Tags    []string
-	Meta    map[string]string
-	Port    int
-	Address string
+	Service  string
+	Tags     []string
+	Meta     map[string]string
+	Port     int
+	Address  string
+	NodeFqdn string
 }
 
 // Contains the keys/tags to use during the topology generation

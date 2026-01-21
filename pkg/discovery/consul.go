@@ -122,12 +122,18 @@ func (cd *ConsulDiscoverer) UpdateTopology() error {
 }
 
 func toServiceEntry(entry *consul.ServiceEntry) ServiceEntry {
+	nodeFqdn := entry.Node.Meta["fqdn"] // set by taco (our in-house consul/k8s sync)
+	if nodeFqdn == "" {
+		nodeFqdn = entry.Service.Meta["external-k8s-node-name"] // set by consul-k8s-sync
+	}
+
 	return ServiceEntry{
-		Service: entry.Service.Service,
-		Tags:    entry.Service.Tags,
-		Meta:    entry.Service.Meta,
-		Port:    entry.Service.Port,
-		Address: entry.Service.Address,
+		Service:  entry.Service.Service,
+		Tags:     entry.Service.Tags,
+		Meta:     entry.Service.Meta,
+		Port:     entry.Service.Port,
+		Address:  entry.Service.Address,
+		NodeFqdn: nodeFqdn,
 	}
 }
 

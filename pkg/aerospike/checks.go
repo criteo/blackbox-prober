@@ -88,18 +88,18 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
 
-	keyPrefix := e.Config.genericConfig.LatencyKeyPrefix
+	keyPrefix := e.ClusterConfig.genericConfig.LatencyKeyPrefix
 
-	policy := as.NewWritePolicy(0, 3600)                      // Expire after one hour if the delete didn't work
-	policy.MaxRetries = 0                                     // Ensure we never retry (0 is default Client value in v7)
-	policy.ReplicaPolicy = as.MASTER                          // Read are always done on master (SEQUENCE is default Client value in v7)
-	policy.TotalTimeout = e.Config.genericConfig.TotalTimeout // 0 is default Client value in v7
+	policy := as.NewWritePolicy(0, 3600)                             // Expire after one hour if the delete didn't work
+	policy.MaxRetries = 0                                            // Ensure we never retry (0 is default Client value in v7)
+	policy.ReplicaPolicy = as.MASTER                                 // Read are always done on master (SEQUENCE is default Client value in v7)
+	policy.TotalTimeout = e.ClusterConfig.genericConfig.TotalTimeout // 0 is default Client value in v7
 	// Do not wait until timeout if connections cannot be open
-	policy.ExitFastOnExhaustedConnectionPool = e.Config.genericConfig.ExitFastOnExhaustedConnectionPool
+	policy.ExitFastOnExhaustedConnectionPool = e.ClusterConfig.genericConfig.ExitFastOnExhaustedConnectionPool
 
 	for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
 		// TODO configurable set
-		key, as_err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
+		key, as_err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 		if as_err != nil {
 			return as_err
 		}
@@ -113,7 +113,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		}
 
 		// PUT OPERATION
-		labels := []string{"put", node.GetHost().Name, e.Namespace, e.ClusterName, node.GetName()}
+		labels := []string{"put", node.GetHost().Name, e.Namespace, e.ClusterConfig.clusterName, node.GetName()}
 
 		opPut := func() error {
 			return e.Client.Put(policy, key, val)
@@ -176,11 +176,11 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
 
-	policy := as.NewWritePolicy(0, as.TTLDontExpire)          // No expiration
-	policy.MaxRetries = 2                                     // We can retry for durability (0 is default Client value in v7)
-	policy.TotalTimeout = e.Config.genericConfig.TotalTimeout // 0 is default Client value in v7
-	keyRange := e.Config.genericConfig.DurabilityKeyTotal
-	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
+	policy := as.NewWritePolicy(0, as.TTLDontExpire)                 // No expiration
+	policy.MaxRetries = 2                                            // We can retry for durability (0 is default Client value in v7)
+	policy.TotalTimeout = e.ClusterConfig.genericConfig.TotalTimeout // 0 is default Client value in v7
+	keyRange := e.ClusterConfig.genericConfig.DurabilityKeyTotal
+	keyPrefix := e.ClusterConfig.genericConfig.DurabilityKeyPrefix
 	// allPushedFlag indicate if a probe have pushed all data once
 	// The value contains information about the data pushed (scheme:key_range)
 	// scheme: the format of the data (v1=shasum of the key)
@@ -189,7 +189,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	expectedAllPushedFlagVal := fmt.Sprintf("%s:%d", "v1", keyRange) // v1 represents the format of the data stored.
 
 	// allPushedFlag indicate if a probe have pushed all data once
-	allPushedFlag, err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, "all_pushed_flag"))
+	allPushedFlag, err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, "all_pushed_flag"))
 	if err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 
 	for i := 0; i < keyRange; i++ {
 		keyName := fmt.Sprintf("%s%d", keyPrefix, i)
-		key, err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, keyName)
+		key, err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, keyName)
 		if err != nil {
 			return err
 		}
@@ -240,17 +240,17 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	}
 
 	policy := as.NewPolicy()
-	policy.MaxRetries = 2                                     // 2 is default Client value in v7
-	policy.ReplicaPolicy = as.SEQUENCE                        // SEQUENCE is default Client value (alternate across master/replica in case of errors)
-	policy.TotalTimeout = e.Config.genericConfig.TotalTimeout // 0 is default Client value in v7
-	keyRange := e.Config.genericConfig.DurabilityKeyTotal
-	keyPrefix := e.Config.genericConfig.DurabilityKeyPrefix
+	policy.MaxRetries = 2                                            // 2 is default Client value in v7
+	policy.ReplicaPolicy = as.SEQUENCE                               // SEQUENCE is default Client value (alternate across master/replica in case of errors)
+	policy.TotalTimeout = e.ClusterConfig.genericConfig.TotalTimeout // 0 is default Client value in v7
+	keyRange := e.ClusterConfig.genericConfig.DurabilityKeyTotal
+	keyPrefix := e.ClusterConfig.genericConfig.DurabilityKeyPrefix
 
 	total_found_items := 0.0
 	total_corrupted_items := 0.0
 	for i := 0; i < keyRange; i++ {
 		keyName := fmt.Sprintf("%s%d", keyPrefix, i)
-		key, err := as.NewKey(e.Namespace, e.Config.genericConfig.MonitoringSet, keyName)
+		key, err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, keyName)
 		if err != nil {
 			return err
 		}
@@ -270,8 +270,8 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 		}
 		level.Debug(e.Logger).Log("msg", fmt.Sprintf("durability record validated: %s (%s)", keyAsStr(key), recVal.Bins["val"]))
 	}
-	durabilityExpectedItems.WithLabelValues(e.Namespace, e.ClusterName, e.GetName()).Set(float64(keyRange))
-	durabilityFoundItems.WithLabelValues(e.Namespace, e.ClusterName, e.GetName()).Set(total_found_items)
-	durabilityCorruptedItems.WithLabelValues(e.Namespace, e.ClusterName, e.GetName()).Set(total_corrupted_items)
+	durabilityExpectedItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(float64(keyRange))
+	durabilityFoundItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_found_items)
+	durabilityCorruptedItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_corrupted_items)
 	return nil
 }

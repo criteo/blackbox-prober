@@ -11,8 +11,15 @@ import (
 	"github.com/pkg/errors"
 )
 
+type AerospikeNodeInfo struct {
+	NodeName string // node name as returned by Aerospike driver
+	PodName  string // name of the pod running this Aerospike node
+	NodeFqdn string // fqdn of the physical node running the pod
+}
+
 // Config used to configure the client of Aerospike
 type AerospikeClientConfig struct {
+	clusterName string
 	// auth
 	authEnabled bool
 	username    string
@@ -24,6 +31,9 @@ type AerospikeClientConfig struct {
 	host as.Host
 	// Config
 	genericConfig *AerospikeEndpointConfig
+
+	// a map keeping information about nodes to enrich metrics
+	nodeInfoCache map[string]*AerospikeNodeInfo
 }
 
 // Config used to configure the endpoint of Aerospike

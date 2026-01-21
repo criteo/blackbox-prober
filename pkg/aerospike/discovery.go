@@ -15,7 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 )
 
-func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry) ([]*AerospikeEndpoint, error) {
+func (conf *AerospikeProbeConfig) buildClusterClientConfig(logger log.Logger, entries []discovery.ServiceEntry) (*AerospikeClientConfig, error) {
 	authEnabled := conf.AerospikeEndpointConfig.AuthEnabled
 	var (
 		username    string
@@ -34,46 +34,47 @@ func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger lo
 		}
 	}
 
-	tlsEnabled := utils.Contains(entry.Tags, conf.AerospikeEndpointConfig.TLSTag)
+	tlsEnabled := utils.Contains(entries[0].Tags, conf.AerospikeEndpointConfig.TLSTag)
 	if tlsEnabled {
-		hostname, ok := entry.Meta[conf.AerospikeEndpointConfig.TLSHostnameMetaKey]
+		hostname, ok := entries[0].Meta[conf.AerospikeEndpointConfig.TLSHostnameMetaKey]
 		if ok {
 			tlsHostname = hostname
 		}
 	}
 
-	clusterName, ok := entry.Meta[conf.DiscoveryConfig.MetaClusterKey]
+	clusterName, ok := entries[0].Meta[conf.DiscoveryConfig.MetaClusterKey]
 	if !ok {
 		level.Warn(logger).Log("msg", "Cluster name not found, replacing it with hostname")
-		clusterName = entry.Address
+		clusterName = entries[0].Address
 	}
 
-	namespaces := conf.getNamespacesFromEntry(logger, entry)
-
-	var endpoints []*AerospikeEndpoint
-	for namespace := range namespaces {
-		e := &AerospikeEndpoint{Name: clusterName,
-			ClusterName:  clusterName,
-			Namespace:    namespace,
-			ClusterLevel: true,
-			Config: AerospikeClientConfig{
-				// auth
-				authEnabled: authEnabled,
-				username:    username,
-				password:    password,
-				// tls
-				tlsEnabled:  tlsEnabled,
-				tlsHostname: tlsHostname,
-				// conf
-				genericConfig: &conf.AerospikeEndpointConfig,
-				// Contact point
-				host: as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port}},
-			Logger: log.With(logger, "endpoint_name", entry.Address),
+	nodeInfoCache := map[string]*AerospikeNodeInfo{}
+	for _, entry := range entries {
+		nodeInfoCache[entry.Address] = &AerospikeNodeInfo{
+			NodeName: entry.Address,
+			// TODO PodName
+			NodeFqdn: entry.NodeFqdn,
 		}
-		endpoints = append(endpoints, e)
 	}
 
-	return endpoints, nil
+	clusterConfig := AerospikeClientConfig{
+		clusterName: clusterName,
+		// auth
+		authEnabled: authEnabled,
+		username:    username,
+		password:    password,
+		// tls
+		tlsEnabled:  tlsEnabled,
+		tlsHostname: tlsHostname,
+		// conf
+		genericConfig: &conf.AerospikeEndpointConfig,
+		// Contact point
+		host: as.Host{Name: entries[0].Address, TLSName: tlsHostname, Port: entries[0].Port},
+		// node info cache
+		nodeInfoCache: nodeInfoCache,
+	}
+
+	return &clusterConfig, nil
 }
 
 func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry discovery.ServiceEntry) map[string]struct{} {
@@ -101,16 +102,35 @@ func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry
 	return namespaces
 }
 
+func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry, clusterConfig *AerospikeClientConfig) []*AerospikeEndpoint {
+	namespaces := conf.getNamespacesFromEntry(logger, entry)
+
+	var endpoints []*AerospikeEndpoint
+	for namespace := range namespaces {
+		e := &AerospikeEndpoint{Name: clusterConfig.clusterName,
+			Namespace:     namespace,
+			ClusterLevel:  true,
+			ClusterConfig: clusterConfig,
+			Logger:        log.With(logger, "endpoint_name", entry.Address),
+		}
+		endpoints = append(endpoints, e)
+	}
+
+	return endpoints
+}
+
 func (conf AerospikeProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
 	return func(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
 		clusterMap := topology.NewClusterMap()
+
 		clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
 		for _, entries := range clusterEntries {
-			endpoints, err := conf.generateNamespacedEndpointsFromEntry(logger, entries[0])
+			clusterConfig, err := conf.buildClusterClientConfig(logger, entries)
 			if err != nil {
 				return clusterMap, err
 			}
 
+			endpoints := conf.generateNamespacedEndpointsFromEntry(logger, entries[0], clusterConfig)
 			for _, endpoint := range endpoints {
 				cluster := topology.NewCluster(endpoint)
 				clusterMap.AppendCluster(cluster)

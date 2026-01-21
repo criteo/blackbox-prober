@@ -1,0 +1,30 @@
+discovery:
+  # Key used to group endpoints by clusters
+  meta_cluster_key: "CLUSTER"
+  consul_sd_config:
+    server: https://consul-relay.da1.preprod.crto.in
+    tag_separator: ','
+    scheme: https
+    allow_stale: true
+    refresh_interval: 30s
+    tags:
+    - maintenance-opensearch
+client_config:
+  ### AUTH ###
+  # Enable authentication
+  auth_enabled: true
+  # Env variable to use to retrieve the credentials
+  username_env: "OPENSEARCH_USERNAME"
+  password_env: "OPENSEARCH_PASSWORD"
+  ### TLS ###
+  # Tag to use in the discovery to determine wether or not the probe should connect to cluster in SSL
+  tls_tag: "ssl"
+  # Skip TLS verification
+  insecure_skip_verify: true
+checks_configs:
+  latency_check:
+    enable: true
+    interval: 500ms
+  durability_check:
+    enable: true
+    interval: 600s

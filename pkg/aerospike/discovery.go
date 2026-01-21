@@ -52,7 +52,7 @@ func (conf *AerospikeProbeConfig) buildClusterClientConfig(logger log.Logger, en
 	for _, entry := range entries {
 		nodeInfoCache[entry.Address] = &AerospikeNodeInfo{
 			NodeName: entry.Address,
-			// TODO PodName
+			PodName:  entry.PodName,
 			NodeFqdn: entry.NodeFqdn,
 		}
 	}

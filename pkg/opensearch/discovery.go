@@ -67,6 +67,7 @@ func (conf *OpenSearchProbeConfig) buildOpenSearchEndpoint(logger log.Logger, cl
 	endpoint := &OpenSearchEndpoint{
 		Name:         entry.Address,
 		PodName:      entry.Meta["k8s_pod"],
+		NodeFqdn:     entry.NodeFqdn,
 		ClusterName:  conf.valueFromTags("cluster_name", entry.Tags),
 		ClusterLevel: true,
 		ClientConfig: clientConfig,
@@ -99,7 +100,6 @@ func (conf *OpenSearchProbeConfig) generateNodeEndpointFromEntry(logger log.Logg
 	}
 	return conf.buildOpenSearchEndpoint(logger, clusterName, entry)
 }
-
 
 func (conf *OpenSearchProbeConfig) valueFromTags(prefix string, serviceTags []string) string {
 	for _, tag := range serviceTags {

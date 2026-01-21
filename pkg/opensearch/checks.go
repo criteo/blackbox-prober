@@ -96,7 +96,7 @@ func LatencyPrepare(p topology.ProbeableEndpoint) error {
 
 	// Init cluster and node error count metric
 	clusterErrorsCount.WithLabelValues(e.ClusterName).Set(0)
-	nodeAvailability.WithLabelValues(e.ClusterName, e.Name, e.PodName).Set(0)
+	nodeAvailability.WithLabelValues(e.ClusterName, e.NodeFqdn, e.PodName).Set(0)
 
 	// Check if latency index exists, create it if it does not
 	exists, err := e.checkIndexExists(LATENCY_INDEX_NAME)
@@ -196,7 +196,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 	// CAT HEALTH
 	labels = []string{"cat_health", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
-	labelsAvailability := []string{e.ClusterName, e.Name, e.PodName}
+	labelsAvailability := []string{e.ClusterName, e.NodeFqdn, e.PodName}
 	opCat := func() error {
 		return e.catHealth()
 	}

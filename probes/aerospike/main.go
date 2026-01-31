@@ -14,7 +14,7 @@ import (
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
 
-	asl "github.com/aerospike/aerospike-client-go/v7/logger"
+	asl "github.com/aerospike/aerospike-client-go/v8/logger"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/pkg/errors"

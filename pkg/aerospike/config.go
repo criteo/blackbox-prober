@@ -3,8 +3,8 @@ package aerospike
 import (
 	"time"
 
-	as "github.com/aerospike/aerospike-client-go/v7"
-	asl "github.com/aerospike/aerospike-client-go/v7/logger"
+	as "github.com/aerospike/aerospike-client-go/v8"
+	asl "github.com/aerospike/aerospike-client-go/v8/logger"
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"

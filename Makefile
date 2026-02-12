@@ -1,11 +1,11 @@
 IMG ?= blackbox-prober:latest
 
-.PHONY: test build_linux build_aerospike build_linux_aerospike build_milvus build_linux_milvus lint image
+.PHONY: test build_linux build_aerospike build_linux_aerospike build_milvus build_linux_milvus lint image build_triton build_linux_triton refresh-triton-client
 
 test:
 		go test ./...
 
-build: build_aerospike build_milvus build_opensearch
+build: build_aerospike build_milvus build_opensearch build_triton
 
 build_aerospike:
 		CGO_ENABLED=0 go build -o build/aerospike_probe probes/aerospike/main.go
@@ -25,7 +25,16 @@ build_opensearch:
 build_linux_opensearch:
 		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/opensearch_probe probes/opensearch/*.go
 
-build_linux: build_linux_aerospike build_linux_milvus build_linux_opensearch
+build_triton:
+		CGO_ENABLED=0 go build -o build/triton_probe probes/triton/main.go
+
+build_linux_triton:
+		CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/triton_probe probes/triton/*.go
+
+refresh-triton-client:
+	bash scripts/generate-triton-client.sh
+
+build_linux: build_linux_aerospike build_linux_milvus build_linux_opensearch build_linux_triton
 
 lint:
 		gofmt -d -e -s pkg/**/*.go probes/**/*.go
@@ -33,3 +42,4 @@ lint:
 
 image:
 	docker build -t ${IMG} .
+

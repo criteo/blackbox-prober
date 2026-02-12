@@ -1,0 +1,22 @@
+discovery:
+  consul_sd_config:
+    server: localhost:8500
+    services: # Static service names
+      - "my-triton-grpc"
+    tags: # OR filter by Consul tags (services must have all tags)
+      - "triton"
+      - "production"
+    refresh_interval: 30s
+
+client_config:
+  timeout: 30s # gRPC operation timeout
+  batch_size: 1 # Batch size for inference requests
+  skip_inactive_models:
+    enable: false         # Skip models with no external traffic
+    probe_replicas: 2     # Number of probe instances (for accurate traffic estimation)
+    margin: 5             # Safety buffer for external executions
+
+checks_configs:
+  latency_check:
+    enable: true
+    interval: 500ms

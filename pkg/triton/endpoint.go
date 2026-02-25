@@ -1,0 +1,341 @@
+package triton
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/criteo/blackbox-prober/pkg/discovery"
+	"github.com/criteo/blackbox-prober/pkg/triton/client"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+// ModelInfo holds cached metadata and configuration for a single model.
+type ModelInfo struct {
+	Name     string
+	Version  string
+	Metadata *client.ModelMetadataResponse
+	Config   *client.ModelConfig
+
+	// Activity tracking fields
+	// CurrExecutionCount is the execution count from the last Refresh.
+	CurrExecutionCount uint64
+	// ProbeCount tracks how many probes THIS instance made since last Refresh.
+	// Reset to 0 after each Refresh.
+	ProbeCount uint64
+	// IsActive indicates whether the model has external traffic beyond probe traffic.
+	// Defaults to true for new models or when activity detection is disabled.
+	IsActive bool
+}
+
+// TritonEndpoint represents a single Triton Inference Server instance.
+// Each server in a cluster (Consul service) is a separate endpoint.
+type TritonEndpoint struct {
+	Name        string
+	ClusterName string
+	Address     string // host:port for gRPC
+	PodName     string // k8s pod name (from discovery metadata)
+
+	conn       *grpc.ClientConn
+	grpcClient client.GRPCInferenceServiceClient
+	generator  *Generator
+
+	// Cached metadata for ALL models (auto-discovered)
+	models map[string]*ModelInfo
+
+	Logger log.Logger
+	Config *TritonEndpointConfig
+}
+
+// NewTritonEndpoint creates a TritonEndpoint from a Consul service entry.
+func NewTritonEndpoint(logger log.Logger, clusterName string, entry discovery.ServiceEntry, config *TritonEndpointConfig) *TritonEndpoint {
+	return &TritonEndpoint{
+		Name:        fmt.Sprintf("%s-%s", entry.Service, entry.Address),
+		ClusterName: clusterName,
+		Address:     fmt.Sprintf("%s:%d", entry.Address, entry.Port),
+		PodName:     entry.Meta["k8s_pod"],
+		Logger:      log.With(logger, "endpoint", entry.Address, "cluster", clusterName),
+		Config:      config,
+	}
+}
+
+func (e *TritonEndpoint) GetHash() string {
+	return fmt.Sprintf("%s/%s", e.ClusterName, e.Address)
+}
+
+// GetName returns a display name for this endpoint.
+func (e *TritonEndpoint) GetName() string {
+	return e.Name
+}
+
+// IsCluster returns false since each TritonEndpoint represents a single server instance,
+// not the entire cluster.
+func (e *TritonEndpoint) IsCluster() bool {
+	return false
+}
+
+// Connect establishes a gRPC connection to the Triton server,
+// verifies the server is ready, and performs initial model discovery.
+func (e *TritonEndpoint) Connect() error {
+	ctx, cancel := e.contextWithTimeout()
+	defer cancel()
+
+	// Dial gRPC connection
+	opts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	conn, err := grpc.DialContext(ctx, e.Address, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to dial triton server at %s: %w", e.Address, err)
+	}
+	e.conn = conn
+	e.grpcClient = client.NewGRPCInferenceServiceClient(conn)
+	e.generator = NewGenerator()
+	e.models = make(map[string]*ModelInfo)
+
+	// Verify server is ready
+	readyResp, err := e.grpcClient.ServerReady(ctx, &client.ServerReadyRequest{})
+	if err != nil {
+		e.conn.Close()
+		return fmt.Errorf("failed to check server readiness: %w", err)
+	}
+	if !readyResp.GetReady() {
+		e.conn.Close()
+		return fmt.Errorf("triton server at %s is not ready", e.Address)
+	}
+
+	level.Info(e.Logger).Log("msg", "Connected to Triton server", "address", e.Address)
+
+	// Perform initial model discovery
+	// RepositoryIndex can take a long time to complete, to at some point we should make it async if blocking the main thread is a problem
+	err = e.Refresh()
+	if err != nil {
+		return fmt.Errorf("failed to refresh model cache: %w", err)
+	}
+	return nil
+}
+
+// Refresh discovers all ready models and caches their metadata and configuration.
+// Called periodically by the scheduler.
+func (e *TritonEndpoint) Refresh() error {
+	ctx, cancel := e.contextWithTimeout()
+	defer cancel()
+
+	// This is safe making a reference because e.models is only replaced atomically (not mutated in place) and workers are synchronous.
+	// If this changes, we would need to make a shallow copy of the map here.
+	oldModels := e.models
+
+	// Get list of all ready models
+	indexResp, err := e.grpcClient.RepositoryIndex(ctx, &client.RepositoryIndexRequest{
+		Ready: true, // Only get models that are ready for inference
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get repository index: %w", err)
+	}
+
+	newModels := make(map[string]*ModelInfo)
+	for _, modelIndex := range indexResp.GetModels() {
+		modelName := modelIndex.GetName()
+		modelVersion := modelIndex.GetVersion()
+
+		// Use model name + version as key for uniqueness
+		modelKey := modelName
+		if modelVersion != "" {
+			modelKey = fmt.Sprintf("%s:%s", modelName, modelVersion)
+		}
+
+		// Fetch model metadata
+		metadata, err := e.grpcClient.ModelMetadata(ctx, &client.ModelMetadataRequest{
+			Name:    modelName,
+			Version: modelVersion,
+		})
+		if err != nil {
+			level.Warn(e.Logger).Log(
+				"msg", "Failed to get model metadata",
+				"model", modelName,
+				"version", modelVersion,
+				"err", err,
+			)
+			continue
+		}
+		// Fetch model configuration
+		configResp, err := e.grpcClient.ModelConfig(ctx, &client.ModelConfigRequest{
+			Name:    modelName,
+			Version: modelVersion,
+		})
+
+		if err != nil {
+			level.Warn(e.Logger).Log(
+				"msg", "Failed to get model config",
+				"model", modelName,
+				"version", modelVersion,
+				"err", err,
+			)
+			continue
+		}
+
+		// Fetch execution statistics and compute activity (only if enabled)
+		var currExecCount uint64
+		isActive := true
+		if e.Config != nil && e.Config.SkipInactiveModels.Enable {
+			currExecCount, isActive = e.fetchModelActivity(ctx, modelKey, modelName, modelVersion, oldModels)
+		}
+
+		newModels[modelKey] = &ModelInfo{
+			Name:               modelName,
+			Version:            modelVersion,
+			Metadata:           metadata,
+			Config:             configResp.GetConfig(),
+			CurrExecutionCount: currExecCount,
+			ProbeCount:         0, // Reset for next cycle
+			IsActive:           isActive,
+		}
+	}
+
+	e.models = newModels
+
+	level.Debug(e.Logger).Log("msg", "Refreshed model cache", "model_count", len(newModels))
+	return nil
+}
+
+// fetchModelActivity fetches model statistics and computes whether the model is active.
+// It also updates the activity metric.
+// Returns the current execution count and whether the model is active.
+func (e *TritonEndpoint) fetchModelActivity(ctx context.Context, modelKey, modelName, modelVersion string, oldModels map[string]*ModelInfo) (uint64, bool) {
+	// Fetch execution statistics
+	var currExecCount uint64
+	stats, err := e.grpcClient.ModelStatistics(ctx, &client.ModelStatisticsRequest{
+		Name:    modelName,
+		Version: modelVersion,
+	})
+	if err != nil {
+		level.Warn(e.Logger).Log(
+			"msg", "Failed to get model statistics",
+			"model", modelName,
+			"version", modelVersion,
+			"err", err,
+		)
+		modelStatsFetchFailures.WithLabelValues(e.ClusterName, e.Address, modelKey, e.PodName).Inc()
+		// On error, assume active (we can't determine otherwise)
+		return 0, true
+	}
+	if len(stats.GetModelStats()) > 0 {
+		currExecCount = stats.GetModelStats()[0].GetExecutionCount()
+	}
+
+	// Check if this is the first observation (no baseline)
+	oldModel, exists := oldModels[modelKey]
+	if !exists {
+		// First observation - start inactive, next refresh will determine activity
+		modelActiveGauge.WithLabelValues(e.ClusterName, e.Address, modelKey, e.PodName).Set(0.0)
+		return currExecCount, false
+	}
+
+	// Expected probe count = this instance's probes × number of replicas
+	expectedProbeCount := oldModel.ProbeCount * uint64(e.Config.SkipInactiveModels.ProbeReplicas)
+
+	isActive := ComputeModelActivity(oldModel.CurrExecutionCount, currExecCount, expectedProbeCount, e.Config.SkipInactiveModels.Margin)
+
+	// Log activity for debugging
+	level.Debug(e.Logger).Log(
+		"msg", "model activity computed",
+		"model", modelKey,
+		"prev_exec", oldModel.CurrExecutionCount,
+		"curr_exec", currExecCount,
+		"probe_count", oldModel.ProbeCount, // this instance's probes count since last Refresh
+		"expected_total_probes", expectedProbeCount, // expected total probes count since last Refresh (this instance's probes count * number of replicas of the probe)
+		"is_active", isActive,
+	)
+
+	// Update activity metric
+	activeVal := 0.0
+	if isActive {
+		activeVal = 1.0
+	}
+	modelActiveGauge.WithLabelValues(e.ClusterName, e.Address, modelKey, e.PodName).Set(activeVal)
+
+	return currExecCount, isActive
+}
+
+// Close terminates the gRPC connection to the Triton server.
+func (e *TritonEndpoint) Close() error {
+	if e.conn != nil {
+		if err := e.conn.Close(); err != nil {
+			return fmt.Errorf("failed to close grpc connection: %w", err)
+		}
+		e.conn = nil
+		e.grpcClient = nil
+	}
+	return nil
+}
+
+// GetModels returns a copy of the cached model information.
+func (e *TritonEndpoint) GetModels() map[string]*ModelInfo {
+	result := make(map[string]*ModelInfo, len(e.models))
+	for k, v := range e.models {
+		result[k] = v
+	}
+	return result
+}
+
+// CanProbe checks if a model can be probed with random data.
+// Returns false with a reason if the model should be skipped.
+func CanProbe(modelInfo *ModelInfo) (bool, string) {
+	for _, input := range modelInfo.Metadata.GetInputs() {
+		shape := input.GetShape()
+
+		// Skip BYTES with single dimension - likely expects JSON dict or image data
+		// BYTES with multiple dimensions (e.g., [-1, 16]) are string arrays, OK to probe
+		if input.GetDatatype() == "BYTES" && len(shape) == 1 {
+			return false, fmt.Sprintf("input %q has BYTES[1] (likely expects JSON or image)", input.GetName())
+		}
+
+		// Skip dynamic shapes beyond batch dimension
+		for i, dim := range shape {
+			if i > 0 && dim == -1 {
+				return false, fmt.Sprintf("input %q has dynamic shape at index %d", input.GetName(), i)
+			}
+		}
+	}
+	return true, ""
+}
+
+// Infer performs an inference request against a model and returns the response.
+// This is a reusable building block for various checks.
+func (e *TritonEndpoint) Infer(modelInfo *ModelInfo, batchSize int64) (*client.ModelInferResponse, error) {
+	request, err := e.generator.BuildInferRequest(
+		modelInfo.Metadata,
+		modelInfo.Config,
+		modelInfo.Name,
+		modelInfo.Version,
+		batchSize,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build infer request for model %s: %w", modelInfo.Name, err)
+	}
+
+	ctx, cancel := e.contextWithTimeout()
+	defer cancel()
+
+	resp, err := e.grpcClient.ModelInfer(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("inference failed for model %s: %w", modelInfo.Name, err)
+	}
+
+	// Track probe count for activity detection
+	modelInfo.ProbeCount++
+
+	return resp, nil
+}
+
+// contextWithTimeout returns a context with the configured timeout.
+func (e *TritonEndpoint) contextWithTimeout() (context.Context, context.CancelFunc) {
+	timeout := 30 * time.Second
+	if e.Config != nil && e.Config.Timeout > 0 {
+		timeout = e.Config.Timeout
+	}
+	return context.WithTimeout(context.Background(), timeout)
+}

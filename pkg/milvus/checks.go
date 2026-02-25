@@ -3,6 +3,7 @@ package milvus
 import (
 	"context"
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -87,6 +88,16 @@ func generateRandomVector(dim int) []float32 {
 	vec := make([]float32, dim)
 	for i := 0; i < dim; i++ {
 		vec[i] = rand.Float32()
+	}
+	return vec
+}
+
+func generateDeterministicArbitraryVector(dim int, seed string) []float32 {
+	vec := make([]float32, dim)
+	for i := 0; i < dim; i++ {
+		digest := sha1.Sum([]byte(fmt.Sprintf("%s:%d", seed, i)))
+		val := binary.LittleEndian.Uint32(digest[:4])
+		vec[i] = float32(float64(val) / 0xFFFFFFFF)
 	}
 	return vec
 }
@@ -261,13 +272,13 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 			ids[i] = id
 			keys[i] = k
 			values[i] = hash(k)
-			vecs[i] = normalizeVector(generateRandomVector(DIMENSION))
+			vecs[i] = normalizeVector(generateDeterministicArbitraryVector(DIMENSION, k))
 		}
 
 		insertCtx, insertCancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
 		defer insertCancel()
 
-		_, err := e.Client.Insert(insertCtx,
+		_, err := e.Client.Upsert(insertCtx,
 			milvusclient.NewColumnBasedInsertOption(collectionName).
 				WithInt64Column("id", ids).
 				WithVarcharColumn("key", keys).
@@ -281,12 +292,12 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 	}
 
 	{
-		vec := normalizeVector(generateRandomVector(DIMENSION))
+		vec := normalizeVector(generateDeterministicArbitraryVector(DIMENSION, flagKey))
 
 		insertInitFlagCtx, insertInitFlagCancel := context.WithTimeout(ctx, e.Config.InsertTimeout)
 		defer insertInitFlagCancel()
 
-		_, err := e.Client.Insert(insertInitFlagCtx,
+		_, err := e.Client.Upsert(insertInitFlagCtx,
 			milvusclient.NewColumnBasedInsertOption(collectionName).
 				WithInt64Column("id", []int64{int64(e.Config.InitItemsPerCollection)}).
 				WithVarcharColumn("key", []string{flagKey}).

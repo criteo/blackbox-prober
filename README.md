@@ -50,9 +50,9 @@ Aerospike blackbox probe
 
 Flags:
   -h, --help               Show context-sensitive help (also try --help-long and --help-man).
-      --web.listen-address="0.0.0.0:8080"  
+      --web.listen-address="0.0.0.0:8080"
                            Address to listen on for UI, API, and telemetry.
-      --config.path="config.yaml"  
+      --config.path="config.yaml"
                            Path to the probe configuration file
       --log.level=info     Only log messages with the given severity or above. One of: [debug, info, warn, error]
       --log.format=logfmt  Output format of log messages. One of: [logfmt, json]
@@ -82,27 +82,27 @@ The prober will schedule checks (either cluster or node level) for each endpoint
 
 ## Conventions
 
-Metrics should use seconds as unit or prefix with the unit (`_ms`) 
+Metrics should use seconds as unit or prefix with the unit (`_ms`)
 
 
 ## Implementations
 
-Probes are defined in the probes/\<name of db\> directory.
+Probes are defined in the cmd/\<name of db\> directory.
 The probes have to define 3 things:
 
 ### Endpoints
 
-A implementation of the `toplogy.ProbeableEndpoint`. It contains the client 
+A implementation of the `toplogy.ProbeableEndpoint`. It contains the client
 (and everything necessary) to connect to the database. State, locks or
 connections should not be shared between endpoints as it may affect recorded
 latencies.
 
-See [probes/aerospike/endpoint.go](probes/aerospike/endpoint.go) for an example
+See [cmd/aerospike/endpoint.go](cmd/aerospike/endpoint.go) for an example
 
 ### Endpoint builder
 
 The discovery is responsible for creating the topology. When creating a
-discoverer, a builder function should be provided: 
+discoverer, a builder function should be provided:
 `topologyBuilderFn func(log.Logger, []ServiceEntry) (topology.ClusterMap, error)`
 This function takes all the service entries (services found by the service
 discovery) and return a topology. A generic version of this function is
@@ -116,7 +116,7 @@ GetGenericTopologyBuilder(
 `ClusterFn` should generate a cluster level endpoint
 `NodeFn` should generate a node level endpoint
 
-See [probes/aerospike/discovery.go](probes/aerospike/discovery.go) for an example
+See [cmd/aerospike/discovery.go](cmd/aerospike/discovery.go) for an example
 
 ### Checks
 
@@ -132,4 +132,4 @@ p.RegisterNewClusterCheck(scheduler.Check{
 ```
 `scheduler.Noop` is a placeholder function
 
-See [probes/aerospike/main.go](probes/aerospike/main.go) for an example
+See [cmd/aerospike/main.go](cmd/aerospike/main.go) for an example

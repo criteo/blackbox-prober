@@ -111,9 +111,6 @@ func (conf *OpenSearchProbeConfig) valueFromTags(prefix string, serviceTags []st
 	return ""
 }
 
-func (conf *OpenSearchProbeConfig) TopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
-	return conf.DiscoveryConfig.GetGenericTopologyBuilder(
-		conf.generateClusterEndpointFromEntries,
-		conf.generateNodeEndpointFromEntry,
-	)
+func (conf *OpenSearchProbeConfig) BuildTopology(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
+	return conf.DiscoveryConfig.BuildTopology(logger, entries, conf.generateClusterEndpointFromEntries, conf.generateNodeEndpointFromEntry)
 }

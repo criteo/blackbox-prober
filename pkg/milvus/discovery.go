@@ -79,24 +79,22 @@ func (conf *MilvusProbeConfig) generateClusterEndpointsFromEntry(logger log.Logg
 	return []*MilvusEndpoint{endpoint}, nil
 }
 
-func (conf MilvusProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
-	return func(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
-		clusterMap := topology.NewClusterMap()
-		clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
-		for _, entries := range clusterEntries {
-			endpoints, err := conf.generateClusterEndpointsFromEntry(logger, entries[0])
-			if err != nil {
-				return clusterMap, err
-			}
-
-			for _, endpoint := range endpoints {
-				level.Debug(logger).Log("msg", "Adding cluster", "cluster", endpoint.Name, "address", endpoint.ClientConfig.Address)
-
-				cluster := topology.NewCluster(endpoint)
-				clusterMap.AppendCluster(cluster)
-			}
-
+func (conf *MilvusProbeConfig) BuildTopology(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
+	clusterMap := topology.NewClusterMap()
+	clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
+	for _, clusterGroup := range clusterEntries {
+		endpoints, err := conf.generateClusterEndpointsFromEntry(logger, clusterGroup[0])
+		if err != nil {
+			return clusterMap, err
 		}
-		return clusterMap, nil
+
+		for _, endpoint := range endpoints {
+			level.Debug(logger).Log("msg", "Adding cluster", "cluster", endpoint.Name, "address", endpoint.ClientConfig.Address)
+
+			cluster := topology.NewCluster(endpoint)
+			clusterMap.AppendCluster(cluster)
+		}
+
 	}
+	return clusterMap, nil
 }

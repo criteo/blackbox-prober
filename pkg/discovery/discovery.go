@@ -41,30 +41,30 @@ var (
 	}
 )
 
-func (conf GenericDiscoveryConfig) GetGenericTopologyBuilder(
+func (conf GenericDiscoveryConfig) BuildTopology(
+	logger log.Logger,
+	entries []ServiceEntry,
 	ClusterFn func(log.Logger, []ServiceEntry) (topology.ProbeableEndpoint, error),
-	NodeFn func(log.Logger, ServiceEntry) (topology.ProbeableEndpoint, error)) func(log.Logger, []ServiceEntry) (topology.ClusterMap, error) {
+	NodeFn func(log.Logger, ServiceEntry) (topology.ProbeableEndpoint, error)) (topology.ClusterMap, error) {
 
-	return func(logger log.Logger, entries []ServiceEntry) (topology.ClusterMap, error) {
-		clusterMap := topology.NewClusterMap()
-		clusterEntries := conf.GroupNodesByCluster(logger, entries)
-		for _, entries := range clusterEntries {
-			clusterEndpoint, err := ClusterFn(logger, entries)
+	clusterMap := topology.NewClusterMap()
+	clusterEntries := conf.GroupNodesByCluster(logger, entries)
+	for _, entries := range clusterEntries {
+		clusterEndpoint, err := ClusterFn(logger, entries)
+		if err != nil {
+			return clusterMap, err
+		}
+		cluster := topology.NewCluster(clusterEndpoint)
+		for _, entry := range entries {
+			nodeEndpoint, err := NodeFn(logger, entry)
 			if err != nil {
 				return clusterMap, err
 			}
-			cluster := topology.NewCluster(clusterEndpoint)
-			for _, entry := range entries {
-				nodeEndpoint, err := NodeFn(logger, entry)
-				if err != nil {
-					return clusterMap, err
-				}
-				cluster.AddEndpoint(nodeEndpoint)
-			}
-			clusterMap.AppendCluster(cluster)
+			cluster.AddEndpoint(nodeEndpoint)
 		}
-		return clusterMap, nil
+		clusterMap.AppendCluster(cluster)
 	}
+	return clusterMap, nil
 }
 
 func (conf GenericDiscoveryConfig) GroupNodesByCluster(logger log.Logger, entries []ServiceEntry) map[string][]ServiceEntry {

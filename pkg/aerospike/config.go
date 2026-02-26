@@ -6,16 +6,11 @@ import (
 	as "github.com/aerospike/aerospike-client-go/v8"
 	asl "github.com/aerospike/aerospike-client-go/v8/logger"
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/criteo/blackbox-prober/pkg/common"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/scheduler"
 	"github.com/pkg/errors"
 )
-
-type AerospikeNodeInfo struct {
-	NodeName string // node name as returned by Aerospike driver
-	PodName  string // name of the pod running this Aerospike node
-	NodeFqdn string // fqdn of the physical node running the pod
-}
 
 // Config used to configure the client of Aerospike
 type AerospikeClientConfig struct {
@@ -33,7 +28,7 @@ type AerospikeClientConfig struct {
 	genericConfig *AerospikeEndpointConfig
 
 	// a map keeping information about nodes to enrich metrics
-	nodeInfoCache map[string]*AerospikeNodeInfo
+	nodeInfoCache map[string]*common.ClusterNodeInfo
 }
 
 // Config used to configure the endpoint of Aerospike

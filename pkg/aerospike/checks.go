@@ -7,6 +7,7 @@ import (
 	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v8"
+	"github.com/criteo/blackbox-prober/pkg/common"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
 	"github.com/go-kit/log/level"
@@ -116,7 +117,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		}
 
 		// lookup node fqdn and pod name associated to aerospike endpoint
-		nodeInfo := &AerospikeNodeInfo{NodeName: node.GetHost().Name, NodeFqdn: "unknown", PodName: "unknown"}
+		nodeInfo := &common.ClusterNodeInfo{NodeName: node.GetHost().Name, NodeFqdn: "unknown", PodName: "unknown"}
 		if ni, found := e.ClusterConfig.nodeInfoCache[node.GetHost().Name]; found {
 			nodeInfo = ni
 		}

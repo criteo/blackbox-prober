@@ -52,6 +52,7 @@ type OpenSearchProbeConfig struct {
 }
 
 type OpenSearchChecksConfigs struct {
-	LatencyCheckConfig    scheduler.CheckConfig `yaml:"latency_check,omitempty"`
-	DurabilityCheckConfig scheduler.CheckConfig `yaml:"durability_check,omitempty"`
+	AvailabilityCheckConfig scheduler.CheckConfig `yaml:"availability_check,omitempty"`
+	LatencyCheckConfig      scheduler.CheckConfig `yaml:"latency_check,omitempty"`
+	DurabilityCheckConfig   scheduler.CheckConfig `yaml:"durability_check,omitempty"`
 }

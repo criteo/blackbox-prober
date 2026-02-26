@@ -60,6 +60,15 @@ func main() {
 	// Scheduler stuff
 	p := scheduler.NewProbingScheduler(log.With(logger), topo)
 
+	if config.OpenSearchChecksConfigs.AvailabilityCheckConfig.Enable {
+		p.RegisterNewClusterCheck(scheduler.Check{
+			Name:       "availability_check",
+			PrepareFn:  opensearch.AvailabilityPrepare,
+			CheckFn:    opensearch.AvailabilityCheck,
+			TeardownFn: scheduler.Noop,
+			Interval:   config.OpenSearchChecksConfigs.LatencyCheckConfig.Interval,
+		})
+	}
 	if config.OpenSearchChecksConfigs.LatencyCheckConfig.Enable {
 		p.RegisterNewClusterCheck(scheduler.Check{
 			Name:       "latency_check",

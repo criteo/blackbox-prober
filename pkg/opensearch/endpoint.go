@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/criteo/blackbox-prober/pkg/common"
 	"github.com/go-kit/log"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchutil"
@@ -17,12 +18,13 @@ type OpenSearchEndpoint struct {
 	Name         string
 	ClusterLevel bool
 	ClusterName  string
-	PodName      string
-	NodeFqdn     string
 	Client       *opensearchapi.Client
 	ClientConfig opensearchapi.Config
 	Config       OpenSearchEndpointConfig
 	Logger       log.Logger
+
+	// a map keeping information about nodes to enrich metrics
+	nodeInfoCache map[string]*common.ClusterNodeInfo
 }
 
 func (e *OpenSearchEndpoint) GetHash() string {
@@ -384,4 +386,23 @@ func (e *OpenSearchEndpoint) catHealth() error {
 	}
 
 	return nil
+}
+
+func (e *OpenSearchEndpoint) catNodes() ([]string, error) {
+	ctx := context.Background()
+	nodes := []string{}
+	response, err := e.Client.Cat.Nodes(ctx, &opensearchapi.CatNodesReq{})
+	if err != nil {
+		return nodes, fmt.Errorf("error getting cat nodes: %v", err)
+	}
+
+	if response.Inspect().Response.StatusCode != 200 {
+		return nodes, fmt.Errorf("unexpected status code %d when getting cat node", response.Inspect().Response.StatusCode)
+	}
+
+	for _, node := range response.Nodes {
+		nodes = append(nodes, node.Name)
+	}
+
+	return nodes, nil
 }

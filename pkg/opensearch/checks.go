@@ -74,6 +74,35 @@ var clusterErrorsCount = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Help: "Total number of errors in the cluster",
 }, []string{"cluster"})
 
+func AvailabilityPrepare(p topology.ProbeableEndpoint) error {
+	return nil
+}
+
+func AvailabilityCheck(p topology.ProbeableEndpoint) error {
+	e, ok := p.(*OpenSearchEndpoint)
+	if !ok {
+		return fmt.Errorf("error: given endpoint is not an opensearch endpoint")
+	}
+
+	catNodes, err := e.catNodes()
+	if err != nil {
+		return errorHandler(fmt.Errorf("failed to get cat nodes for %s: %s", e.Name, err), e.ClusterName)
+	}
+
+	nodeAvailability.DeleteLabelValues(e.ClusterName)
+	for _, nodeInfo := range e.nodeInfoCache {
+		nodeAvailability.WithLabelValues(e.ClusterName, nodeInfo.NodeFqdn, nodeInfo.PodName).Set(0)
+	}
+	for _, node := range catNodes {
+		if ni, found := e.nodeInfoCache[node]; found {
+			// Set node availability metric to 1 on success
+			nodeAvailability.WithLabelValues(e.ClusterName, ni.NodeFqdn, ni.PodName).Set(1)
+		}
+	}
+
+	return nil
+}
+
 // ObserveOpLatency measures the latency of the given operation function 'op' and records it in the opLatency histogram.
 // It also increments the opFailuresTotal counter if the operation results in an error.
 func ObserveOpLatency(op func() error, labels []string) error {
@@ -96,7 +125,6 @@ func LatencyPrepare(p topology.ProbeableEndpoint) error {
 
 	// Init cluster and node error count metric
 	clusterErrorsCount.WithLabelValues(e.ClusterName).Set(0)
-	nodeAvailability.WithLabelValues(e.ClusterName, e.NodeFqdn, e.PodName).Set(0)
 
 	// Check if latency index exists, create it if it does not
 	exists, err := e.checkIndexExists(LATENCY_INDEX_NAME)
@@ -196,19 +224,13 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 
 	// CAT HEALTH
 	labels = []string{"cat_health", e.Name, e.ClusterName, LATENCY_INDEX_NAME}
-	labelsAvailability := []string{e.ClusterName, e.NodeFqdn, e.PodName}
 	opCat := func() error {
 		return e.catHealth()
 	}
-
 	err = ObserveOpLatency(opCat, labels)
 	if err != nil {
-		// Set node availability metric to 0 on failure
-		nodeAvailability.WithLabelValues(labelsAvailability...).Set(0)
 		return errorHandler(fmt.Errorf("failed to get cat health for %s: %s", e.Name, err), e.ClusterName)
 	}
-	// Set node availability metric to 1 on success
-	nodeAvailability.WithLabelValues(labelsAvailability...).Set(1)
 
 	level.Debug(e.Logger).Log("msg", fmt.Sprintf("cat health success for: %s", e.Name))
 

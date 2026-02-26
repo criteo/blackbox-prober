@@ -22,6 +22,9 @@ client_config:
   # Skip TLS verification
   insecure_skip_verify: true
 checks_configs:
+  availability_check:
+    enable: true
+    interval: 30s
   latency_check:
     enable: true
     interval: 500ms

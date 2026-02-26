@@ -18,6 +18,7 @@ import (
 
 type ClusterNodeInfo struct {
 	NodeName string // node name as returned by database
+	NodeIP   string // node ip
 	PodName  string // name of the pod running this Aerospike node
 	NodeFqdn string // fqdn of the physical node running the pod
 }

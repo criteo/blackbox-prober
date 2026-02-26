@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/criteo/blackbox-prober/pkg/common"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
@@ -15,21 +17,40 @@ import (
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 )
 
-func (conf *OpenSearchProbeConfig) buildAddress(tlsEnabled bool, entry discovery.ServiceEntry) string {
+func (conf *OpenSearchProbeConfig) buildAddress(entry discovery.ServiceEntry) string {
 	proto := "http"
-	if tlsEnabled {
+	if utils.Contains(entry.Tags, conf.OpenSearchEndpointConfig.TLSTag) {
 		proto = "https"
 	}
 
 	return fmt.Sprintf("%s://%s", proto, fmt.Sprintf("%s:%d", entry.Address, entry.Port))
 }
 
-func (conf *OpenSearchProbeConfig) buildOpenSearchEndpoint(logger log.Logger, clusterName string, entry discovery.ServiceEntry) (*OpenSearchEndpoint, error) {
+func (conf *OpenSearchProbeConfig) buildOpenSearchEndpoint(logger log.Logger, entries []discovery.ServiceEntry) (*OpenSearchEndpoint, error) {
 	// Init Client Config
-	tlsEnabled := utils.Contains(entry.Tags, conf.OpenSearchEndpointConfig.TLSTag)
+	tlsEnabled := false
+
+	nodeInfoCache := map[string]*common.ClusterNodeInfo{} // a map keeping information about nodes to enrich metrics
+	seeds := []string{}
+	for _, entry := range entries {
+		contactPoint := conf.buildAddress(entry)
+		seeds = append(seeds, contactPoint)
+		if strings.HasPrefix(contactPoint, "https") {
+			tlsEnabled = true
+		}
+
+		nodeInfoCache[entry.PodName] = &common.ClusterNodeInfo{
+			NodeIP:   entry.Address,
+			PodName:  entry.PodName,
+			NodeFqdn: entry.NodeFqdn,
+		}
+	}
+
 	clientConfig := opensearchapi.Config{
 		Client: opensearch.Config{
-			Addresses: []string{conf.buildAddress(tlsEnabled, entry)},
+			Addresses:             seeds,
+			DiscoverNodesOnStart:  true, // sniffing enabled to retrieve topology updates before consul
+			DiscoverNodesInterval: 30 * time.Second,
 		},
 	}
 
@@ -64,41 +85,18 @@ func (conf *OpenSearchProbeConfig) buildOpenSearchEndpoint(logger log.Logger, cl
 		clientConfig.Client.Password = password
 	}
 
+	clusterName := conf.valueFromTags("cluster_name", entries[0].Tags)
 	endpoint := &OpenSearchEndpoint{
-		Name:         entry.Address,
-		PodName:      entry.Meta["k8s_pod"],
-		NodeFqdn:     entry.NodeFqdn,
-		ClusterName:  conf.valueFromTags("cluster_name", entry.Tags),
-		ClusterLevel: true,
-		ClientConfig: clientConfig,
-		Config:       conf.OpenSearchEndpointConfig,
-		Logger:       log.With(logger, "endpoint_name", entry.Address),
+		Name:          clusterName,
+		ClusterName:   clusterName,
+		ClusterLevel:  true,
+		ClientConfig:  clientConfig,
+		Config:        conf.OpenSearchEndpointConfig,
+		Logger:        log.With(logger, "endpoint_name", clusterName),
+		nodeInfoCache: nodeInfoCache,
 	}
 
 	return endpoint, nil
-}
-
-func (conf *OpenSearchProbeConfig) generateClusterEndpointFromEntries(logger log.Logger, entries []discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
-	if len(entries) == 0 {
-		return nil, fmt.Errorf("no entries provided")
-	}
-
-	entry := entries[0]
-
-	clusterName, ok := entry.Meta[conf.DiscoveryConfig.MetaClusterKey]
-	if !ok {
-		return nil, fmt.Errorf("cluster name not found in meta key: %s", conf.DiscoveryConfig.MetaClusterKey)
-	}
-
-	return conf.buildOpenSearchEndpoint(logger, clusterName, entry)
-}
-
-func (conf *OpenSearchProbeConfig) generateNodeEndpointFromEntry(logger log.Logger, entry discovery.ServiceEntry) (topology.ProbeableEndpoint, error) {
-	clusterName, ok := entry.Meta[conf.DiscoveryConfig.MetaClusterKey]
-	if !ok {
-		clusterName = entry.Address
-	}
-	return conf.buildOpenSearchEndpoint(logger, clusterName, entry)
 }
 
 func (conf *OpenSearchProbeConfig) valueFromTags(prefix string, serviceTags []string) string {
@@ -112,5 +110,19 @@ func (conf *OpenSearchProbeConfig) valueFromTags(prefix string, serviceTags []st
 }
 
 func (conf *OpenSearchProbeConfig) BuildTopology(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
-	return conf.DiscoveryConfig.BuildTopology(logger, entries, conf.generateClusterEndpointFromEntries, conf.generateNodeEndpointFromEntry)
+	clusterMap := topology.NewClusterMap()
+	clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
+	for serviceName, entries := range clusterEntries {
+		if len(entries) == 0 {
+			return clusterMap, fmt.Errorf("no service instances found for %s", serviceName)
+		}
+
+		clusterEndpoint, err := conf.buildOpenSearchEndpoint(logger, entries)
+		if err != nil {
+			return clusterMap, err
+		}
+		cluster := topology.NewCluster(clusterEndpoint)
+		clusterMap.AppendCluster(cluster)
+	}
+	return clusterMap, nil
 }

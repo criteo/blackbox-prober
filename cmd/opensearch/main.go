@@ -50,7 +50,7 @@ func main() {
 
 	// DISCO stuff
 	topo := make(chan topology.ClusterMap, 1)
-	discoverer, err := discovery.NewConsulDiscoverer(log.With(logger), config.DiscoveryConfig.ConsulConfig, topo, config.TopologyBuilder())
+	discoverer, err := discovery.NewConsulDiscoverer(log.With(logger), config.DiscoveryConfig.ConsulConfig, topo, config.BuildTopology)
 	if err != nil {
 		level.Error(logger).Log("msg", "Fatal: error during init of service discovery", "err", err)
 		os.Exit(2)

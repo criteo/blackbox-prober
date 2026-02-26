@@ -119,24 +119,22 @@ func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger lo
 	return endpoints
 }
 
-func (conf AerospikeProbeConfig) NamespacedTopologyBuilder() func(log.Logger, []discovery.ServiceEntry) (topology.ClusterMap, error) {
-	return func(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
-		clusterMap := topology.NewClusterMap()
+func (conf *AerospikeProbeConfig) BuildTopology(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
+	clusterMap := topology.NewClusterMap()
 
-		clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
-		for _, entries := range clusterEntries {
-			clusterConfig, err := conf.buildClusterClientConfig(logger, entries)
-			if err != nil {
-				return clusterMap, err
-			}
-
-			endpoints := conf.generateNamespacedEndpointsFromEntry(logger, entries[0], clusterConfig)
-			for _, endpoint := range endpoints {
-				cluster := topology.NewCluster(endpoint)
-				clusterMap.AppendCluster(cluster)
-			}
-
+	clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
+	for _, clusterGroup := range clusterEntries {
+		clusterConfig, err := conf.buildClusterClientConfig(logger, clusterGroup)
+		if err != nil {
+			return clusterMap, err
 		}
-		return clusterMap, nil
+
+		endpoints := conf.generateNamespacedEndpointsFromEntry(logger, clusterGroup[0], clusterConfig)
+		for _, endpoint := range endpoints {
+			cluster := topology.NewCluster(endpoint)
+			clusterMap.AppendCluster(cluster)
+		}
+
 	}
+	return clusterMap, nil
 }

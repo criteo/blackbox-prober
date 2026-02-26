@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	as "github.com/aerospike/aerospike-client-go/v8"
+	"github.com/criteo/blackbox-prober/pkg/common"
 	"github.com/criteo/blackbox-prober/pkg/discovery"
 	"github.com/criteo/blackbox-prober/pkg/topology"
 	"github.com/criteo/blackbox-prober/pkg/utils"
@@ -48,9 +49,9 @@ func (conf *AerospikeProbeConfig) buildClusterClientConfig(logger log.Logger, en
 		clusterName = entries[0].Address
 	}
 
-	nodeInfoCache := map[string]*AerospikeNodeInfo{}
+	nodeInfoCache := map[string]*common.ClusterNodeInfo{}
 	for _, entry := range entries {
-		nodeInfoCache[entry.Address] = &AerospikeNodeInfo{
+		nodeInfoCache[entry.Address] = &common.ClusterNodeInfo{
 			NodeName: entry.Address,
 			PodName:  entry.PodName,
 			NodeFqdn: entry.NodeFqdn,

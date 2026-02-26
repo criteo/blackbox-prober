@@ -16,6 +16,12 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type ClusterNodeInfo struct {
+	NodeName string // node name as returned by database
+	PodName  string // name of the pod running this Aerospike node
+	NodeFqdn string // fqdn of the physical node running the pod
+}
+
 type ProbeConfig struct {
 	LogConfig      promlog.Config `yaml:"log,omitempty"`
 	HttpListenAddr string         `yaml:"http_listen_addr,omitempty"`

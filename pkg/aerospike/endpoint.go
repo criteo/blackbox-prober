@@ -3,6 +3,7 @@ package aerospike
 import (
 	"crypto/tls"
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -18,13 +19,14 @@ var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 }, []string{"cluster", "probe_endpoint", "namespace", "name"})
 
 type AerospikeEndpoint struct {
-	Name          string
-	ClusterLevel  bool
-	ClusterName   string
-	Client        *as.Client
-	ClusterConfig *AerospikeClientConfig
-	Logger        log.Logger
-	Namespace     string
+	Name                string
+	ClusterLevel        bool
+	ClusterName         string
+	Client              *as.Client
+	ClusterConfig       *AerospikeClientConfig
+	Logger              log.Logger
+	Namespace           string
+	lastReauthAttemptAt time.Time
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
@@ -53,6 +55,9 @@ func (e *AerospikeEndpoint) setMetricFromASStats(stats map[string]interface{}, k
 }
 
 func (e *AerospikeEndpoint) refreshMetrics() {
+	// Do note that these are client-side metrics, which means they are periodically lost as we now
+	// periodically re-create the client to detect auth issues.
+
 	stats, err := e.Client.Stats()
 	cluster_stats := stats["cluster-aggregated-stats"].(map[string]interface{})
 	if err != nil {
@@ -73,7 +78,9 @@ func (e *AerospikeEndpoint) refreshMetrics() {
 	e.setMetricFromASStats(cluster_stats, "tends-failed")
 }
 
-func (e *AerospikeEndpoint) Connect() error {
+func (e *AerospikeEndpoint) connectClient() error {
+	e.lastReauthAttemptAt = time.Now()
+
 	clientPolicy := as.NewClientPolicy()
 	clientPolicy.ConnectionQueueSize = e.ClusterConfig.genericConfig.ConnectionQueueSize
 	clientPolicy.OpeningConnectionThreshold = e.ClusterConfig.genericConfig.OpeningConnectionThreshold
@@ -105,6 +112,33 @@ func (e *AerospikeEndpoint) Connect() error {
 		return err
 	}
 	e.Client = client
+	return nil
+}
+
+func (e *AerospikeEndpoint) shouldReauth(now time.Time) bool {
+	reauthInterval := e.ClusterConfig.genericConfig.ReauthInterval
+	return reauthInterval > 0 && !e.lastReauthAttemptAt.IsZero() && now.Sub(e.lastReauthAttemptAt) >= reauthInterval
+}
+
+func (e *AerospikeEndpoint) reauth() error {
+	e.Close()
+	return e.connectClient()
+}
+
+func (e *AerospikeEndpoint) EnsureFreshClient() error {
+	if e.shouldReauth(time.Now()) {
+		level.Debug(e.Logger).Log("msg", "Reauthenticating Aerospike client")
+		if err := e.reauth(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *AerospikeEndpoint) Connect() error {
+	if err := e.connectClient(); err != nil {
+		return err
+	}
 	e.Refresh()
 	return nil
 }

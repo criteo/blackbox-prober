@@ -83,11 +83,20 @@ func hash(str string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
+func ensureAerospikeClientRefreshed(e *AerospikeEndpoint) error {
+	return e.EnsureFreshClient()
+}
+
 func LatencyCheck(p topology.ProbeableEndpoint) error {
 	e, ok := p.(*AerospikeEndpoint)
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
+
+	// Ignore the error to cause probing check failure; LDAP failures are logged anyway.
+	// We do *not* get the latency check fail alert, because when client is invalid,
+	// function fails before ObserveOpLatency. This differs from durability check behavior
+	ensureAerospikeClientRefreshed(e)
 
 	keyPrefix := e.ClusterConfig.genericConfig.LatencyKeyPrefix
 
@@ -186,6 +195,9 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
+	if err := ensureAerospikeClientRefreshed(e); err != nil {
+		return err
+	}
 
 	policy := as.NewWritePolicy(0, as.TTLDontExpire)                 // No expiration
 	policy.MaxRetries = 2                                            // We can retry for durability (0 is default Client value in v7)
@@ -249,6 +261,11 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
+
+	// Ignore the error to cause probing check failure; LDAP failures are logged anyway
+	// We get data_unavailable when LDAP failures happen, as the gauges are set unconditionally
+	// at the bottom of this function
+	ensureAerospikeClientRefreshed(e)
 
 	policy := as.NewPolicy()
 	policy.MaxRetries = 2                                            // 2 is default Client value in v7

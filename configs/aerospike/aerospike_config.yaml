@@ -10,7 +10,7 @@ discovery:
     tags:
     - aerospike
 client_config:
-  ### AUTH ### 
+  ### AUTH ###
   # Enable authentication
   auth_enabled: true
   # Use external authentication (https://docs.aerospike.com/docs/guide/security/access-control.html#external-authentication-with-ldap)
@@ -24,7 +24,7 @@ client_config:
   # Meta key to find the tls-hostname to use for SSL cert validation
   tls_hostname_meta_key: "tls-hostname"
   # Skip ssl verification
-  tls_skip_verify: false 
+  tls_skip_verify: false
   ### Probe discovery configuration ###
   # The key prefix to discover Aerospike's namespaces through service discovery
   namespace_meta_key_prefix: "aerospike-monitoring-"
@@ -37,6 +37,7 @@ client_config:
   connection_queue_size: 2 # Avoid creating too many connections. We don't need many as we duplicate the clients many times
   opening_connection_threshold: 30
   min_connections_per_node: 2
+  reauth_interval: 2m # Close current connections and reauthenticate periodically
   exit_fast_on_exhausted_connection_pool: True
 checks_configs:
   latency_check:

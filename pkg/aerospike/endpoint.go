@@ -2,6 +2,7 @@ package aerospike
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"time"
 
@@ -17,6 +18,11 @@ var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_aerospike_client_cluster_stats",
 	Help: "Cluster aggregated metrics from the go aerospike client",
 }, []string{"cluster", "probe_endpoint", "namespace", "name"})
+
+var ldapSpecificFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: ASSuffix + "_ldap_specific_failures_total",
+	Help: "Total number of Aerospike LDAP-specific failures detected (when server auths with LDAP on our behalf)",
+}, []string{"cluster", "probe_endpoint", "namespace", "result_code", "result_code_name"})
 
 type AerospikeEndpoint struct {
 	Name                string
@@ -78,6 +84,48 @@ func (e *AerospikeEndpoint) refreshMetrics() {
 	e.setMetricFromASStats(cluster_stats, "tends-failed")
 }
 
+func ldapSpecificResultCode(err error) (int, string, bool) {
+	// Current LDAP-specific error codes, which are distinct from
+	// "invalid creds" errors:
+
+	/*
+		#define AS_SEC_ERR_LDAP_NOT_CONFIGURED  90 // LDAP features not configured
+		#define AS_SEC_ERR_LDAP_SETUP           91 // LDAP setup error
+		#define AS_SEC_ERR_LDAP_TLS_SETUP       92 // LDAP TLS setup error
+		#define AS_SEC_ERR_LDAP_AUTHENTICATION  93 // error authenticating LDAP user
+		#define AS_SEC_ERR_LDAP_QUERY           94 // error querying LDAP server
+	*/
+
+	// Values found at as/include/base/proto.h
+	// Presumably 95-99 are reserved for future LDAP-specific error codes
+
+	for err != nil {
+		var ae *as.AerospikeError
+		if errors.As(err, &ae) {
+			rc := int(ae.ResultCode)
+			if rc >= 90 && rc <= 99 {
+				switch rc {
+				case 90:
+					return rc, "AS_SEC_ERR_LDAP_NOT_CONFIGURED", true
+				case 91:
+					return rc, "AS_SEC_ERR_LDAP_SETUP", true
+				case 92:
+					return rc, "AS_SEC_ERR_LDAP_TLS_SETUP", true
+				case 93:
+					return rc, "AS_SEC_ERR_LDAP_AUTHENTICATION", true
+				case 94:
+					return rc, "AS_SEC_ERR_LDAP_QUERY", true
+				default:
+					// Reserved/not-yet-defined LDAP-specific error code
+					return rc, "", true
+				}
+			}
+		}
+		err = errors.Unwrap(err)
+	}
+	return 0, "", false
+}
+
 func (e *AerospikeEndpoint) connectClient() error {
 	e.lastReauthAttemptAt = time.Now()
 
@@ -109,6 +157,10 @@ func (e *AerospikeEndpoint) connectClient() error {
 
 	client, err := as.NewClientWithPolicyAndHost(clientPolicy, &e.ClusterConfig.host)
 	if err != nil {
+		if rc, rcName, ok := ldapSpecificResultCode(err); ok {
+			level.Error(e.Logger).Log("msg", fmt.Sprintf("LDAP-specific failure on %s", e.ClusterConfig.clusterName), "result_code", rc, "result_code_name", rcName)
+			ldapSpecificFailuresTotal.WithLabelValues(e.ClusterConfig.clusterName, e.GetName(), e.Namespace, fmt.Sprintf("%d", rc), rcName).Inc()
+		}
 		return err
 	}
 	e.Client = client

@@ -1,9 +1,12 @@
 package aerospike
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
+	as "github.com/aerospike/aerospike-client-go/v8"
+	ast "github.com/aerospike/aerospike-client-go/v8/types"
 	"gopkg.in/yaml.v2"
 )
 
@@ -36,5 +39,25 @@ func TestAerospikeEndpointShouldReauth(t *testing.T) {
 	endpoint.lastReauthAttemptAt = now.Add(-1 * time.Minute)
 	if endpoint.shouldReauth(now) {
 		t.Fatal("expected reauth to stay disabled before the interval elapses")
+	}
+}
+
+func TestLDAPSpecificResultCode(t *testing.T) {
+	err := fmt.Errorf("wrapped: %w", &as.AerospikeError{ResultCode: 93})
+
+	rc, rcName, ok := ldapSpecificResultCode(err)
+	if !ok {
+		t.Fatal("expected LDAP-specific result code to be detected")
+	}
+	if rc != 93 {
+		t.Fatalf("expected LDAP-specific result code 93, got %d", rc)
+	}
+	if rcName != "AS_SEC_ERR_LDAP_AUTHENTICATION" {
+		t.Fatalf("expected LDAP-specific result code name AS_SEC_ERR_LDAP_AUTHENTICATION, got %q", rcName)
+	}
+
+	err = fmt.Errorf("wrapped: %w", &as.AerospikeError{ResultCode: ast.NOT_AUTHENTICATED})
+	if _, _, ok := ldapSpecificResultCode(err); ok {
+		t.Fatal("expected NOT_AUTHENTICATED to stay outside the LDAP auth failure range")
 	}
 }

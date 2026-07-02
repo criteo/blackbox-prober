@@ -190,6 +190,8 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	policy := as.NewWritePolicy(0, as.TTLDontExpire)                 // No expiration
 	policy.MaxRetries = 2                                            // We can retry for durability (0 is default Client value in v7)
 	policy.TotalTimeout = e.ClusterConfig.genericConfig.TotalTimeout // 0 is default Client value in v7
+	// Do not wait until timeout if connections cannot be open
+	policy.ExitFastOnExhaustedConnectionPool = e.ClusterConfig.genericConfig.ExitFastOnExhaustedConnectionPool
 	keyRange := e.ClusterConfig.genericConfig.DurabilityKeyTotal
 	keyPrefix := e.ClusterConfig.genericConfig.DurabilityKeyPrefix
 	// allPushedFlag indicate if a probe have pushed all data once
@@ -254,6 +256,8 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	policy.MaxRetries = 2                                            // 2 is default Client value in v7
 	policy.ReplicaPolicy = as.SEQUENCE                               // SEQUENCE is default Client value (alternate across master/replica in case of errors)
 	policy.TotalTimeout = e.ClusterConfig.genericConfig.TotalTimeout // 0 is default Client value in v7
+	// Do not wait until timeout if connections cannot be open
+	policy.ExitFastOnExhaustedConnectionPool = e.ClusterConfig.genericConfig.ExitFastOnExhaustedConnectionPool
 	keyRange := e.ClusterConfig.genericConfig.DurabilityKeyTotal
 	keyPrefix := e.ClusterConfig.genericConfig.DurabilityKeyPrefix
 

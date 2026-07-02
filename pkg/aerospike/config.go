@@ -22,8 +22,9 @@ type AerospikeClientConfig struct {
 	// tls
 	tlsEnabled  bool
 	tlsHostname string
-	// Contact point
-	host as.Host
+	// Contact points (seeds): all discovered nodes of the cluster, so the client
+	// can still bootstrap from a surviving node if some pods have changed IP.
+	hosts []*as.Host
 	// Config
 	genericConfig *AerospikeEndpointConfig
 

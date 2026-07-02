@@ -79,6 +79,11 @@ func (e *AerospikeEndpoint) Connect() error {
 	clientPolicy.OpeningConnectionThreshold = e.ClusterConfig.genericConfig.OpeningConnectionThreshold
 	clientPolicy.MinConnectionsPerNode = e.ClusterConfig.genericConfig.MinConnectionsPerNode
 	clientPolicy.TendInterval = e.ClusterConfig.genericConfig.TendInterval
+	// Timeout bounds connection establishment: the TCP dial and the initial socket
+	// deadline (incl. TLS handshake) of a freshly opened connection. The driver defaults
+	// it to 30s, so tends stall ~30s dialing each unreachable node during a roll-restart.
+	// (Steady-state reads/writes and LDAP login use their own per-command timeouts.)
+	clientPolicy.Timeout = e.ClusterConfig.genericConfig.ConnectionTimeout
 
 	if e.ClusterConfig.tlsEnabled {
 		// Setup TLS Config

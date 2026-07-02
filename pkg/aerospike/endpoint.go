@@ -105,7 +105,7 @@ func (e *AerospikeEndpoint) Connect() error {
 		clientPolicy.Password = e.ClusterConfig.password
 	}
 
-	client, err := as.NewClientWithPolicyAndHost(clientPolicy, &e.ClusterConfig.host)
+	client, err := as.NewClientWithPolicyAndHost(clientPolicy, e.ClusterConfig.hosts...)
 	if err != nil {
 		return err
 	}

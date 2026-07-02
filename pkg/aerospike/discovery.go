@@ -50,12 +50,14 @@ func (conf *AerospikeProbeConfig) buildClusterClientConfig(logger log.Logger, en
 	}
 
 	nodeInfoCache := map[string]*common.ClusterNodeInfo{}
+	hosts := make([]*as.Host, 0, len(entries))
 	for _, entry := range entries {
 		nodeInfoCache[entry.Address] = &common.ClusterNodeInfo{
 			NodeName: entry.Address,
 			PodName:  entry.PodName,
 			NodeFqdn: entry.NodeFqdn,
 		}
+		hosts = append(hosts, &as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port})
 	}
 
 	clusterConfig := AerospikeClientConfig{
@@ -69,8 +71,8 @@ func (conf *AerospikeProbeConfig) buildClusterClientConfig(logger log.Logger, en
 		tlsHostname: tlsHostname,
 		// conf
 		genericConfig: &conf.AerospikeEndpointConfig,
-		// Contact point
-		host: as.Host{Name: entries[0].Address, TLSName: tlsHostname, Port: entries[0].Port},
+		// Contact points (seeds)
+		hosts: hosts,
 		// node info cache
 		nodeInfoCache: nodeInfoCache,
 	}

@@ -77,3 +77,13 @@ Executed every X period of time:
 To reset the data after a loss the simpliest is to remove the flag item
 (named: durability_key_prefix + "all_pushed_flag") or to change the number of items to be used
 by the probe.
+
+## Auth
+
+The auth check verifies that a brand-new connection can still authenticate on
+each live Aerospike node. This catches failures masked by the long-lived client
+session used by latency and durability checks.
+
+Authentication rejections fail the scheduler check. Connection errors are counted
+with `status="connection_error"` but do not fail the auth check, so scheduler
+failures for `auth_check` stay specific to authentication.

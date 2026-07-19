@@ -130,4 +130,5 @@ type AerospikeProbeConfig struct {
 type AerospikeChecksConfigs struct {
 	LatencyCheckConfig    scheduler.CheckConfig `yaml:"latency_check,omitempty"`
 	DurabilityCheckConfig scheduler.CheckConfig `yaml:"durability_check,omitempty"`
+	AuthCheckConfig       scheduler.CheckConfig `yaml:"auth_check,omitempty"`
 }

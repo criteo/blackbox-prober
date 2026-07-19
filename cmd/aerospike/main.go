@@ -77,7 +77,7 @@ func main() {
 	p.RunChecksIndependently()
 
 	// One endpoint (and one client) per cluster. Latency and durability checks run over the
-	// monitored namespaces with bounded parallelism.
+	// monitored namespaces with bounded parallelism; auth_check probes fresh per-node logins.
 	if config.AerospikeChecksConfigs.LatencyCheckConfig.Enable {
 		p.RegisterNewClusterCheck(scheduler.Check{
 			Name:       "latency_check",
@@ -94,6 +94,15 @@ func main() {
 			CheckFn:    aerospike.DurabilityCheck,
 			TeardownFn: scheduler.Noop,
 			Interval:   config.AerospikeChecksConfigs.DurabilityCheckConfig.Interval,
+		})
+	}
+	if config.AerospikeChecksConfigs.AuthCheckConfig.Enable {
+		p.RegisterNewClusterCheck(scheduler.Check{
+			Name:       "auth_check",
+			PrepareFn:  scheduler.Noop,
+			CheckFn:    aerospike.AuthCheck,
+			TeardownFn: scheduler.Noop,
+			Interval:   config.AerospikeChecksConfigs.AuthCheckConfig.Interval,
 		})
 	}
 

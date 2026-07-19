@@ -14,6 +14,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -24,12 +25,12 @@ var opLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    ASSuffix + "_op_latency",
 	Help:    "Latency for operations",
 	Buckets: utils.MetricHistogramBuckets,
-}, []string{"operation", "endpoint", "namespace", "node", "pod", "cluster", "id"})
+}, []string{"operation", "endpoint", "namespace", "node", "pod", "cluster", "node_id"})
 
 var opFailuresTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 	Name: ASSuffix + "_op_latency_failures",
 	Help: "Total number of operations that resulted in failure",
-}, []string{"operation", "endpoint", "namespace", "node", "pod", "cluster", "id"})
+}, []string{"operation", "endpoint", "namespace", "node", "pod", "cluster", "node_id"})
 
 var durabilityExpectedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_durability_expected_items",
@@ -45,6 +46,40 @@ var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_durability_corrupted_items",
 	Help: "Total number of items found to be corrupted for durability",
 }, []string{"namespace", "cluster", "probe_endpoint"})
+
+// namespaceCheckParallelism keeps the total check fanout at or below the old rough maximum.
+// With independent scheduler checks, latency and durability may run at the same time; limiting
+// each check to ceil(namespaces/2) means both checks together run at most one namespace lane per
+// monitored namespace. DurabilityPrepare uses a lower limit to avoid startup write bursts.
+func namespaceCheckParallelism(namespaceCount int) int {
+	if namespaceCount <= 1 {
+		return 1
+	}
+	return (namespaceCount + 1) / 2
+}
+
+// forEachNamespace runs fn for every monitored namespace of the endpoint, with a bounded number
+// of namespaces active at once. All namespaces run to completion; the first returned error is an
+// execution error for the scheduler. Domain health, such as missing durability keys, is reported
+// through check-specific metrics instead of necessarily being returned as an error.
+func forEachNamespace(e *AerospikeEndpoint, parallelism int, fn func(namespace string) error) error {
+	if parallelism < 1 {
+		parallelism = 1
+	}
+	if len(e.Namespaces) > 0 && parallelism > len(e.Namespaces) {
+		parallelism = len(e.Namespaces)
+	}
+
+	var g errgroup.Group
+	g.SetLimit(parallelism)
+	for _, namespace := range e.Namespaces {
+		namespace := namespace
+		g.Go(func() error {
+			return fn(namespace)
+		})
+	}
+	return g.Wait()
+}
 
 // getWriteNode find the node against which the write will be made
 func getWriteNode(c *as.Client, policy *as.WritePolicy, key *as.Key) (*as.Node, error) {
@@ -88,7 +123,12 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
+	return forEachNamespace(e, namespaceCheckParallelism(len(e.Namespaces)), func(namespace string) error {
+		return latencyCheckNamespace(e, namespace)
+	})
+}
 
+func latencyCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 	keyPrefix := e.ClusterConfig.genericConfig.LatencyKeyPrefix
 
 	policy := as.NewWritePolicy(0, 3600)                             // Expire after one hour if the delete didn't work
@@ -103,7 +143,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 	// These keys could be generated once in probe lifetime (partition id is the first 12 bits of the digest of the key) and then reused
 	// at each latency check.
 	for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
-		key, as_err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
+		key, as_err := as.NewKey(namespace, e.ClusterConfig.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 		if as_err != nil {
 			return as_err
 		}
@@ -123,7 +163,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 		}
 
 		// PUT OPERATION
-		labels := []string{"put", node.GetHost().Name, e.Namespace, nodeInfo.NodeFqdn, nodeInfo.PodName, e.ClusterConfig.clusterName, node.GetName()}
+		labels := []string{"put", node.GetHost().Name, namespace, nodeInfo.NodeFqdn, nodeInfo.PodName, e.ClusterConfig.clusterName, node.GetName()}
 
 		// PUT OPERATION
 		opPut := func() error {
@@ -186,7 +226,12 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
+	return forEachNamespace(e, 1, func(namespace string) error {
+		return durabilityPrepareNamespace(e, namespace)
+	})
+}
 
+func durabilityPrepareNamespace(e *AerospikeEndpoint, namespace string) error {
 	policy := as.NewWritePolicy(0, as.TTLDontExpire)                 // No expiration
 	policy.MaxRetries = 2                                            // We can retry for durability (0 is default Client value in v7)
 	policy.TotalTimeout = e.ClusterConfig.genericConfig.TotalTimeout // 0 is default Client value in v7
@@ -202,7 +247,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	expectedAllPushedFlagVal := fmt.Sprintf("%s:%d", "v1", keyRange) // v1 represents the format of the data stored.
 
 	// allPushedFlag indicate if a probe have pushed all data once
-	allPushedFlag, err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, "all_pushed_flag"))
+	allPushedFlag, err := as.NewKey(namespace, e.ClusterConfig.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, "all_pushed_flag"))
 	if err != nil {
 		return err
 	}
@@ -219,7 +264,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 
 	for i := 0; i < keyRange; i++ {
 		keyName := fmt.Sprintf("%s%d", keyPrefix, i)
-		key, err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, keyName)
+		key, err := as.NewKey(namespace, e.ClusterConfig.genericConfig.MonitoringSet, keyName)
 		if err != nil {
 			return err
 		}
@@ -251,7 +296,16 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
+	return forEachNamespace(e, namespaceCheckParallelism(len(e.Namespaces)), func(namespace string) error {
+		return durabilityCheckNamespace(e, namespace)
+	})
+}
 
+// durabilityCheckNamespace completes a sweep and publishes durability gauges. Missing records,
+// corrupted values, and read failures are represented by durability_found_items and
+// durability_corrupted_items; they do not fail the scheduler check unless the sweep itself cannot
+// execute far enough to publish those gauges.
+func durabilityCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 	policy := as.NewPolicy()
 	policy.MaxRetries = 2                                            // 2 is default Client value in v7
 	policy.ReplicaPolicy = as.SEQUENCE                               // SEQUENCE is default Client value (alternate across master/replica in case of errors)
@@ -265,7 +319,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	total_corrupted_items := 0.0
 	for i := 0; i < keyRange; i++ {
 		keyName := fmt.Sprintf("%s%d", keyPrefix, i)
-		key, err := as.NewKey(e.Namespace, e.ClusterConfig.genericConfig.MonitoringSet, keyName)
+		key, err := as.NewKey(namespace, e.ClusterConfig.genericConfig.MonitoringSet, keyName)
 		if err != nil {
 			return err
 		}
@@ -285,8 +339,8 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 		}
 		level.Debug(e.Logger).Log("msg", fmt.Sprintf("durability record validated: %s (%s)", keyAsStr(key), recVal.Bins["val"]))
 	}
-	durabilityExpectedItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(float64(keyRange))
-	durabilityFoundItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_found_items)
-	durabilityCorruptedItems.WithLabelValues(e.Namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_corrupted_items)
+	durabilityExpectedItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(float64(keyRange))
+	durabilityFoundItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_found_items)
+	durabilityCorruptedItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_corrupted_items)
 	return nil
 }

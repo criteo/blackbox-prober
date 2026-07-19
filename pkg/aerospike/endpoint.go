@@ -3,6 +3,7 @@ package aerospike
 import (
 	"crypto/tls"
 	"fmt"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -15,7 +16,7 @@ import (
 var clusterStats = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Name: ASSuffix + "_aerospike_client_cluster_stats",
 	Help: "Cluster aggregated metrics from the go aerospike client",
-}, []string{"cluster", "probe_endpoint", "namespace", "name"})
+}, []string{"cluster", "probe_endpoint", "name"})
 
 type AerospikeEndpoint struct {
 	Name          string
@@ -24,11 +25,13 @@ type AerospikeEndpoint struct {
 	Client        *as.Client
 	ClusterConfig *AerospikeClientConfig
 	Logger        log.Logger
-	Namespace     string
+	Namespaces    []string // Namespaces monitored on this cluster
 }
 
 func (e *AerospikeEndpoint) GetHash() string {
-	return fmt.Sprintf("%s/%s/ns:%s", e.ClusterConfig.clusterName, e.Name, e.Namespace)
+	// NB: The namespace set is part of the hash so a change in monitored namespaces triggers a
+	// worker restart. Namespaces are kept sorted at construction so the hash is stable.
+	return fmt.Sprintf("%s/%s/ns:%s", e.ClusterConfig.clusterName, e.Name, strings.Join(e.Namespaces, ","))
 }
 
 func (e *AerospikeEndpoint) GetName() string {
@@ -49,7 +52,8 @@ func (e *AerospikeEndpoint) setMetricFromASStats(stats map[string]interface{}, k
 	if !ok {
 		return
 	}
-	clusterStats.WithLabelValues(e.ClusterConfig.clusterName, e.GetName(), e.Namespace, key).Set(value)
+
+	clusterStats.WithLabelValues(e.ClusterConfig.clusterName, e.GetName(), key).Set(value)
 }
 
 func (e *AerospikeEndpoint) refreshMetrics() {
@@ -75,9 +79,16 @@ func (e *AerospikeEndpoint) refreshMetrics() {
 
 func (e *AerospikeEndpoint) Connect() error {
 	clientPolicy := as.NewClientPolicy()
-	clientPolicy.ConnectionQueueSize = e.ClusterConfig.genericConfig.ConnectionQueueSize
-	clientPolicy.OpeningConnectionThreshold = e.ClusterConfig.genericConfig.OpeningConnectionThreshold
-	clientPolicy.MinConnectionsPerNode = e.ClusterConfig.genericConfig.MinConnectionsPerNode
+
+	// Dynamically adjust the pool from the expected probe concurrency. Latency and durability can
+	// run independently, each with bounded namespace fanout; add headroom for refresh/tend traffic.
+	namespaceParallelism := namespaceCheckParallelism(len(e.Namespaces))
+	expectedConcurrency := 2*namespaceParallelism + 1
+	clientPolicy.MinConnectionsPerNode = 2 * expectedConcurrency
+	if clientPolicy.ConnectionQueueSize <= clientPolicy.MinConnectionsPerNode {
+		clientPolicy.ConnectionQueueSize = clientPolicy.MinConnectionsPerNode + 1
+	}
+
 	clientPolicy.TendInterval = e.ClusterConfig.genericConfig.TendInterval
 	// Timeout bounds connection establishment: the TCP dial and the initial socket
 	// deadline (incl. TLS handshake) of a freshly opened connection. The driver defaults

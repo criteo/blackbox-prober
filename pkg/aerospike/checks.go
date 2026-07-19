@@ -14,12 +14,19 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	dto "github.com/prometheus/client_model/go"
 	"golang.org/x/sync/errgroup"
 )
 
 var (
 	ASSuffix = utils.MetricSuffix + "_aerospike"
 )
+
+var authCheckTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	Name: ASSuffix + "_auth_check_total",
+	Help: "Total number of authentication attempts per node and outcome. " +
+		"status: success | auth_failure | connection_error",
+}, []string{"cluster", "endpoint", "node_id", "status"})
 
 var opLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    ASSuffix + "_op_latency",
@@ -343,4 +350,182 @@ func durabilityCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 	durabilityFoundItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_found_items)
 	durabilityCorruptedItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_corrupted_items)
 	return nil
+}
+
+// authStatus values double as the `status` label on auth_check_total.
+const (
+	authStatusSuccess   = "success"
+	authStatusAuthFail  = "auth_failure"
+	authStatusConnError = "connection_error"
+
+	maxAuthCheckParallelism = 8
+)
+
+func authCheckParallelism(targetCount int) int {
+	if targetCount <= 1 {
+		return 1
+	}
+	if targetCount < maxAuthCheckParallelism {
+		return targetCount
+	}
+	return maxAuthCheckParallelism
+}
+
+// authNodeKey identifies a probed node by its stable aerospike node id and its current IP.
+// It is comparable, so it doubles as the map key when reconciling live vs. departed series.
+type authNodeKey struct {
+	nodeId string
+	ip     string
+}
+
+// authTarget is a single node to probe with a fresh authentication. It embeds authNodeKey
+// (the identity used for metrics) and adds the host to dial (needed for its port / TLS name).
+type authTarget struct {
+	authNodeKey
+	host *as.Host
+}
+
+// authTargets and freshLogin are indirected through package variables so unit tests can
+// mock them without a live cluster.
+var (
+	// authTargets returns the currently live nodes to probe.
+	authTargets = func(e *AerospikeEndpoint) []authTarget {
+		nodes := e.Client.Cluster().GetNodes()
+		targets := make([]authTarget, 0, len(nodes))
+		for _, node := range nodes {
+			host := node.GetHost()
+			targets = append(targets, authTarget{
+				authNodeKey: authNodeKey{nodeId: node.GetName(), ip: host.Name},
+				host:        host,
+			})
+		}
+		return targets
+	}
+
+	// freshLogin opens a brand-new connection to host and performs a full authentication
+	// handshake (bypassing the pool and the cached session token), then discards it. It
+	// returns the auth_check status: success, auth_failure (login rejected) or
+	// connection_error (could not connect). It reuses the exact policy the live client was
+	// built with (auth mode, credentials, TLS, timeouts), so the fresh login mirrors what a
+	// new client would do. Both the dial (policy.Timeout) and the login (policy.LoginTimeout)
+	// are time-bounded, so a hung auth backend surfaces as an error.
+	freshLogin = func(e *AerospikeEndpoint, host *as.Host) (string, error) {
+		policy := e.Client.Cluster().ClientPolicy()
+		conn, err := as.NewConnection(&policy, host)
+		if err != nil {
+			return authStatusConnError, err
+		}
+		defer conn.Close()
+		if err := conn.Login(&policy); err != nil {
+			return authStatusAuthFail, err
+		}
+		return authStatusSuccess, nil
+	}
+)
+
+// AuthCheck verifies that a brand-new client could still authenticate against the cluster,
+// contrary to latency and durability checks that reuse an already-authenticated client, and
+// that keeps working even after server-side auth breaks (LDAP down, credentials revoked,
+// security config change), masking real outage. This check catches that blind spot by doing
+// a fresh login on every live node at each interval.
+func AuthCheck(p topology.ProbeableEndpoint) error {
+	e, ok := p.(*AerospikeEndpoint)
+	if !ok {
+		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
+	}
+
+	// Nothing to verify if authentication is disabled for this cluster.
+	if !e.ClusterConfig.authEnabled {
+		return nil
+	}
+
+	// Build the live-node set up front (in this goroutine) so the concurrent probes below
+	// don't write the map. Fresh logins bypass the client pool, so bound the number of
+	// concurrent dials/logins to avoid a burst against Aerospike or the auth backend.
+	targets := authTargets(e)
+	current := make(map[authNodeKey]struct{}, len(targets))
+	for _, target := range targets {
+		current[target.authNodeKey] = struct{}{}
+	}
+
+	var g errgroup.Group
+	g.SetLimit(authCheckParallelism(len(targets)))
+	for _, target := range targets {
+		target := target
+		g.Go(func() error {
+			status, err := freshLogin(e, target.host)
+			authCheckTotal.WithLabelValues(e.ClusterConfig.clusterName, target.ip, target.nodeId, status).Inc()
+
+			switch status {
+			case authStatusAuthFail:
+				level.Error(e.Logger).Log("msg", fmt.Sprintf("Fresh authentication failed on %s (%s)", target.nodeId, target.ip), "err", err)
+				return errors.Wrapf(err, "fresh authentication failed on %s (%s)", target.nodeId, target.ip)
+			case authStatusConnError:
+				// Connectivity problem (node down / network), not an authentication failure.
+				// Counted but NOT returned, so the scheduler's auth_check failure signal stays
+				// specific to authentication (connectivity is already surfaced elsewhere).
+				level.Error(e.Logger).Log("msg", fmt.Sprintf("Failed to open connection for auth check on %s (%s)", target.nodeId, target.ip), "err", err)
+			}
+			return nil
+		})
+	}
+	// Wait returns the first authentication failure (if any); connection errors return nil
+	// above, so the scheduler's _scheduler_check_failure{check_name="auth_check"} means
+	// "auth is broken".
+	err := g.Wait()
+
+	e.cleanupAuthMetrics(current)
+	return err
+}
+
+// cleanupAuthMetrics deletes auth_check_total series for nodes that are no longer live (pod
+// restart with a new IP, node replacement, downscale). Without this the departed node's
+// counters would flatline forever, false-firing "counter must keep increasing" alerts and
+// growing cardinality as node IPs churn.
+//
+// Rather than tracking previously-seen nodes, it reconciles against the live set passed in:
+// it reads back this endpoint's currently-exported series and drops any whose node is absent
+// from `current`. The whole channel is drained before deleting because Collect holds a read
+// lock for its full duration and DeletePartialMatch needs the write lock.
+func (e *AerospikeEndpoint) cleanupAuthMetrics(current map[authNodeKey]struct{}) {
+	ch := make(chan prometheus.Metric)
+	go func() {
+		authCheckTotal.Collect(ch)
+		close(ch)
+	}()
+
+	stale := make(map[authNodeKey]struct{})
+	for m := range ch {
+		var dm dto.Metric
+		if err := m.Write(&dm); err != nil {
+			continue
+		}
+		var cluster, endpoint, nodeId string
+		for _, lp := range dm.GetLabel() {
+			switch lp.GetName() {
+			case "cluster":
+				cluster = lp.GetValue()
+			case "endpoint":
+				endpoint = lp.GetValue()
+			case "node_id":
+				nodeId = lp.GetValue()
+			}
+		}
+		// Only touch series belonging to this cluster (the vec is shared across clusters).
+		if cluster != e.ClusterConfig.clusterName {
+			continue
+		}
+		key := authNodeKey{nodeId: nodeId, ip: endpoint}
+		if _, ok := current[key]; !ok {
+			stale[key] = struct{}{}
+		}
+	}
+
+	for key := range stale {
+		authCheckTotal.DeletePartialMatch(prometheus.Labels{
+			"cluster":  e.ClusterConfig.clusterName,
+			"endpoint": key.ip,
+			"node_id":  key.nodeId,
+		})
+	}
 }

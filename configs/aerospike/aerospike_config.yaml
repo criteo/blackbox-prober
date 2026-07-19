@@ -42,3 +42,6 @@ checks_configs:
   durability_check:
     enable: true
     interval: 600s
+  auth_check:
+    enable: true
+    interval: 60s

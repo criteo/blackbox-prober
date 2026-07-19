@@ -3,6 +3,7 @@ package aerospike
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -105,21 +106,24 @@ func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry
 	return namespaces
 }
 
-func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry, clusterConfig *AerospikeClientConfig) []*AerospikeEndpoint {
-	namespaces := conf.getNamespacesFromEntry(logger, entry)
-
-	var endpoints []*AerospikeEndpoint
-	for namespace := range namespaces {
-		e := &AerospikeEndpoint{Name: clusterConfig.clusterName,
-			Namespace:     namespace,
-			ClusterLevel:  true,
-			ClusterConfig: clusterConfig,
-			Logger:        log.With(logger, "endpoint_name", entry.Address),
-		}
-		endpoints = append(endpoints, e)
+// generateEndpointFromEntry builds the single endpoint that covers a whole cluster.
+// TODO: we should use a consul dns seed
+func (conf *AerospikeProbeConfig) generateEndpointFromEntry(logger log.Logger, entry discovery.ServiceEntry, clusterConfig *AerospikeClientConfig) *AerospikeEndpoint {
+	namespaceSet := conf.getNamespacesFromEntry(logger, entry)
+	namespaces := make([]string, 0, len(namespaceSet))
+	for namespace := range namespaceSet {
+		namespaces = append(namespaces, namespace)
 	}
+	// Keep sorted so GetHash is stable regardless of map iteration order.
+	sort.Strings(namespaces)
 
-	return endpoints
+	return &AerospikeEndpoint{
+		Name:          clusterConfig.clusterName,
+		Namespaces:    namespaces,
+		ClusterLevel:  true,
+		ClusterConfig: clusterConfig,
+		Logger:        log.With(logger, "endpoint_name", entry.Address),
+	}
 }
 
 func (conf *AerospikeProbeConfig) BuildTopology(logger log.Logger, entries []discovery.ServiceEntry) (topology.ClusterMap, error) {
@@ -132,12 +136,13 @@ func (conf *AerospikeProbeConfig) BuildTopology(logger log.Logger, entries []dis
 			return clusterMap, err
 		}
 
-		endpoints := conf.generateNamespacedEndpointsFromEntry(logger, clusterGroup[0], clusterConfig)
-		for _, endpoint := range endpoints {
-			cluster := topology.NewCluster(endpoint)
-			clusterMap.AppendCluster(cluster)
+		endpoint := conf.generateEndpointFromEntry(logger, clusterGroup[0], clusterConfig)
+		if len(endpoint.Namespaces) == 0 {
+			level.Debug(logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no Aerospike namespaces discovered", endpoint.GetName()))
+			continue
 		}
-
+		cluster := topology.NewCluster(endpoint)
+		clusterMap.AppendCluster(cluster)
 	}
 	return clusterMap, nil
 }

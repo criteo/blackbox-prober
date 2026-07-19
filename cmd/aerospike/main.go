@@ -72,7 +72,12 @@ func main() {
 
 	// Scheduler stuff
 	p := scheduler.NewProbingScheduler(log.With(logger), topo)
+	// Run each check in its own goroutine so a slow check (e.g. a long durability sweep during
+	// migrations) never delays the latency check.
+	p.RunChecksIndependently()
 
+	// One endpoint (and one client) per cluster. Latency and durability checks run over the
+	// monitored namespaces with bounded parallelism.
 	if config.AerospikeChecksConfigs.LatencyCheckConfig.Enable {
 		p.RegisterNewClusterCheck(scheduler.Check{
 			Name:       "latency_check",

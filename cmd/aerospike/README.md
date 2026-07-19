@@ -24,21 +24,21 @@ will be performed (by looking at current topology). It is not perfect but
 it was the best compromise at the time.
 
 
-## One "cluster" for each Namespace
+## Namespace execution
 
 In Aerospike, Namespace are mostly isolated (using difference disks, even different
 nodes). It means that different namespace on the same node might have a different
 behavior. The probe will query each namespace independently.
 
-The second interest architectural: the probe-worker can only start if the prepare
-phase is complete. At the moment, the prepare phase is used to create all the
-objects for the durability check. If it starts without all objects created it can
-trigger false positives. We chose to prevent a worker from starting if the prepare
-phase is not working. The prepare phase is executed periodically until it complete,
-or human intervention (the scheduled failed metric will incr at each failed prepare).
+The probe creates one endpoint and one Aerospike client per cluster. Checks iterate
+over the monitored namespaces with bounded parallelism. The durability prepare
+phase runs namespaces sequentially to avoid creating a startup write burst.
 
-Considering different namespaces as different clusters is a simple way to enable
-namespace checking to start independantly.
+The probe-worker can only start if the prepare phase is complete. At the moment,
+the prepare phase is used to create all the objects for the durability check. If
+it starts without all objects created it can trigger false positives. We prevent a
+worker from starting if the prepare phase is not working. The prepare phase is
+retried on topology updates until it completes or until human intervention.
 
 
 # Checks

@@ -54,9 +54,6 @@ type AerospikeEndpointConfig struct {
 	LatencyKeyPrefix                  string        `yaml:"latency_key_prefix,omitempty"`
 	DurabilityKeyPrefix               string        `yaml:"durability_key_prefix,omitempty"`
 	DurabilityKeyTotal                int           `yaml:"durability_key_total,omitempty"`
-	ConnectionQueueSize               int           `yaml:"connection_queue_size,omitempty"`
-	OpeningConnectionThreshold        int           `yaml:"opening_connection_threshold,omitempty"`
-	MinConnectionsPerNode             int           `yaml:"min_connections_per_node,omitempty"`
 	TendInterval                      time.Duration `yaml:"tend_interval,omitempty"`
 	TotalTimeout                      time.Duration `yaml:"total_timeout,omitempty"`
 	ConnectionTimeout                 time.Duration `yaml:"connection_timeout,omitempty"`
@@ -76,9 +73,6 @@ var (
 		LatencyKeyPrefix:                  "monitoring_latency_",
 		DurabilityKeyPrefix:               "monitoring_durability_",
 		DurabilityKeyTotal:                10000,
-		ConnectionQueueSize:               256,
-		OpeningConnectionThreshold:        0,
-		MinConnectionsPerNode:             0,
 		TendInterval:                      time.Second,
 		TotalTimeout:                      30 * time.Second,
 		ConnectionTimeout:                 5 * time.Second,

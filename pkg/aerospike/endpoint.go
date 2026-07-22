@@ -80,10 +80,11 @@ func (e *AerospikeEndpoint) refreshMetrics() {
 func (e *AerospikeEndpoint) Connect() error {
 	clientPolicy := as.NewClientPolicy()
 
-	// Dynamically adjust the pool from the expected probe concurrency. Latency and durability can
-	// run independently, each with bounded namespace fanout; add headroom for refresh/tend traffic.
+	// Dynamically adjust the pool from the expected probe concurrency. Latency uses CPU-aware
+	// namespace fanout; durability is serial but can overlap with latency, so add one durability
+	// lane plus headroom for refresh/tend traffic. Auth checks bypass this pool.
 	namespaceParallelism := namespaceCheckParallelism(len(e.Namespaces))
-	expectedConcurrency := 2*namespaceParallelism + 1
+	expectedConcurrency := namespaceParallelism + 2
 	clientPolicy.MinConnectionsPerNode = 2 * expectedConcurrency
 	if clientPolicy.ConnectionQueueSize <= clientPolicy.MinConnectionsPerNode {
 		clientPolicy.ConnectionQueueSize = clientPolicy.MinConnectionsPerNode + 1

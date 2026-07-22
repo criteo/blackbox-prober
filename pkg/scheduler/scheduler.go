@@ -276,7 +276,20 @@ func (pw *ProberWorker) prepareProbing() error {
 
 func (pw *ProberWorker) runCheck(check Check) {
 	level.Debug(pw.logger).Log("msg", fmt.Sprintf("Performing check %s", check.Name))
-	if err := check.CheckFn(pw.endpoint); err != nil {
+	start := time.Now()
+	err := check.CheckFn(pw.endpoint)
+	duration := time.Since(start)
+	if check.Interval > 0 && duration > check.Interval {
+		level.Warn(pw.logger).Log(
+			"msg", "Check duration exceeded interval",
+			"check_name", check.Name,
+			"endpoint_name", pw.endpoint.GetName(),
+			"endpoint_hash", pw.endpoint.GetHash(),
+			"duration", duration.String(),
+			"interval", check.Interval.String(),
+		)
+	}
+	if err != nil {
 		CheckFailureTotal.WithLabelValues(check.Name, pw.endpoint.GetName(), check.Name).Inc()
 		level.Error(pw.logger).Log("msg", "Error while probing", "err", err)
 	} else {

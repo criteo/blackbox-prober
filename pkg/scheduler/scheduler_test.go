@@ -1,7 +1,9 @@
 package scheduler
 
 import (
+	"bytes"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -106,6 +108,39 @@ func TestWorkerStopIfNoChecks(t *testing.T) {
 		refreshInterval: 10 * time.Millisecond,
 	}
 	w.startProbing()
+}
+
+func TestRunCheckLogsWhenDurationExceedsInterval(t *testing.T) {
+	var buf bytes.Buffer
+	endpoint := &topology.DummyEndpoint{Name: "slow-endpoint", Hash: "slow-hash"}
+	w := ProberWorker{
+		logger:   log.NewLogfmtLogger(&buf),
+		endpoint: endpoint,
+	}
+	check := Check{
+		Name: "slow-check",
+		CheckFn: func(topology.ProbeableEndpoint) error {
+			time.Sleep(time.Millisecond)
+			return nil
+		},
+		Interval: time.Nanosecond,
+	}
+
+	w.runCheck(check)
+
+	logs := buf.String()
+	for _, want := range []string{
+		`msg="Check duration exceeded interval"`,
+		"check_name=slow-check",
+		"endpoint_name=slow-endpoint",
+		"endpoint_hash=slow-hash",
+		"duration=",
+		"interval=1ns",
+	} {
+		if !strings.Contains(logs, want) {
+			t.Fatalf("expected log to contain %q, got %q", want, logs)
+		}
+	}
 }
 
 // Checks are different between cluster endpoints and node endpoints

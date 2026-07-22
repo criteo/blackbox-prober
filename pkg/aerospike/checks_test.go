@@ -3,6 +3,7 @@ package aerospike
 import (
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -121,6 +122,9 @@ func TestForEachNamespaceHonorsParallelism(t *testing.T) {
 }
 
 func TestNamespaceCheckParallelism(t *testing.T) {
+	previous := runtime.GOMAXPROCS(3)
+	defer runtime.GOMAXPROCS(previous)
+
 	for _, tc := range []struct {
 		name       string
 		namespaces int
@@ -128,7 +132,7 @@ func TestNamespaceCheckParallelism(t *testing.T) {
 	}{
 		{name: "none", namespaces: 0, want: 1},
 		{name: "one", namespaces: 1, want: 1},
-		{name: "two", namespaces: 2, want: 1},
+		{name: "two", namespaces: 2, want: 2},
 		{name: "three", namespaces: 3, want: 2},
 		{name: "four", namespaces: 4, want: 2},
 	} {
@@ -137,6 +141,15 @@ func TestNamespaceCheckParallelism(t *testing.T) {
 				t.Fatalf("expected parallelism %d, got %d", tc.want, got)
 			}
 		})
+	}
+}
+
+func TestNamespaceCheckParallelismSingleCPU(t *testing.T) {
+	previous := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previous)
+
+	if got := namespaceCheckParallelism(4); got != 1 {
+		t.Fatalf("expected parallelism 1 with one GOMAXPROCS, got %d", got)
 	}
 }
 
@@ -278,7 +291,8 @@ func TestAuthCheckParallelism(t *testing.T) {
 	}{
 		{name: "none", targets: 0, want: 1},
 		{name: "one", targets: 1, want: 1},
-		{name: "three", targets: 3, want: 3},
+		{name: "two", targets: 2, want: 2},
+		{name: "three", targets: 3, want: 2},
 		{name: "many", targets: maxAuthCheckParallelism + 3, want: maxAuthCheckParallelism},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

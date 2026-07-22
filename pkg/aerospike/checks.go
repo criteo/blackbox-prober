@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"runtime"
 	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v8"
@@ -54,15 +55,22 @@ var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Help: "Total number of items found to be corrupted for durability",
 }, []string{"namespace", "cluster", "probe_endpoint"})
 
-// namespaceCheckParallelism keeps the total check fanout at or below the old rough maximum.
-// With independent scheduler checks, latency and durability may run at the same time; limiting
-// each check to ceil(namespaces/2) means both checks together run at most one namespace lane per
-// monitored namespace. DurabilityPrepare uses a lower limit to avoid startup write bursts.
+// namespaceCheckParallelism caps latency fanout to the Go scheduler's CPU budget, leaving one
+// P for runtime work, tend/refresh traffic, and other checks. In containers this assumes
+// GOMAXPROCS is set to the pod CPU limit (or derived by the runtime/tooling).
 func namespaceCheckParallelism(namespaceCount int) int {
 	if namespaceCount <= 1 {
 		return 1
 	}
-	return (namespaceCount + 1) / 2
+
+	cpuBudget := runtime.GOMAXPROCS(0) - 1
+	if cpuBudget < 1 {
+		cpuBudget = 1
+	}
+	if namespaceCount < cpuBudget {
+		return namespaceCount
+	}
+	return cpuBudget
 }
 
 // forEachNamespace runs fn for every monitored namespace of the endpoint, with a bounded number
@@ -303,7 +311,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
-	return forEachNamespace(e, namespaceCheckParallelism(len(e.Namespaces)), func(namespace string) error {
+	return forEachNamespace(e, 1, func(namespace string) error {
 		return durabilityCheckNamespace(e, namespace)
 	})
 }
@@ -358,7 +366,7 @@ const (
 	authStatusAuthFail  = "auth_failure"
 	authStatusConnError = "connection_error"
 
-	maxAuthCheckParallelism = 8
+	maxAuthCheckParallelism = 2
 )
 
 func authCheckParallelism(targetCount int) int {

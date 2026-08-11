@@ -31,6 +31,8 @@ type ServiceEntry struct {
 type GenericDiscoveryConfig struct {
 	// Key for the cluster name
 	MetaClusterKey string `yaml:"meta_cluster_key,omitempty"`
+	// List of namespaces not ready for monitoring
+	NotReadyNamespaces map[string][]string `yaml:"not_ready_namespaces,omitempty"`
 	// Specific configuration consul
 	ConsulConfig ConsulConfig `yaml:"consul_sd_config,omitempty"`
 }

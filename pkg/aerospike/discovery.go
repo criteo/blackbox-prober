@@ -3,6 +3,7 @@ package aerospike
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -103,18 +104,27 @@ func (conf AerospikeProbeConfig) getNamespacesFromEntry(logger log.Logger, entry
 	return namespaces
 }
 
+func (conf *AerospikeProbeConfig) shouldSkipNamespace(namespace, cluster string) bool {
+	notReadyNamespaces, found := conf.DiscoveryConfig.NotReadyNamespaces[cluster]
+	return found && slices.Contains(notReadyNamespaces, namespace)
+}
+
 func (conf *AerospikeProbeConfig) generateNamespacedEndpointsFromEntry(logger log.Logger, entry discovery.ServiceEntry, clusterConfig *AerospikeClientConfig) []*AerospikeEndpoint {
 	namespaces := conf.getNamespacesFromEntry(logger, entry)
 
 	var endpoints []*AerospikeEndpoint
 	for namespace := range namespaces {
-		e := &AerospikeEndpoint{Name: clusterConfig.clusterName,
-			Namespace:     namespace,
-			ClusterLevel:  true,
-			ClusterConfig: clusterConfig,
-			Logger:        log.With(logger, "endpoint_name", entry.Address),
+		if conf.shouldSkipNamespace(namespace, clusterConfig.clusterName) {
+			level.Info(logger).Log("msg", fmt.Sprintf("Skipping namespace %s on cluster %s as it is not ready for monitoring.", namespace, clusterConfig.clusterName))
+		} else {
+			e := &AerospikeEndpoint{Name: clusterConfig.clusterName,
+				Namespace:     namespace,
+				ClusterLevel:  true,
+				ClusterConfig: clusterConfig,
+				Logger:        log.With(logger, "endpoint_name", entry.Address),
+			}
+			endpoints = append(endpoints, e)
 		}
-		endpoints = append(endpoints, e)
 	}
 
 	return endpoints

@@ -504,10 +504,12 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 				searchRoCtx, searchRoCancel := context.WithTimeout(ctx, e.Config.SearchTimeout)
 				defer searchRoCancel()
 
+				// The RO probe measures search latency without waiting for streaming freshness.
 				rs, err := e.Client.Search(searchRoCtx,
 					milvusclient.NewSearchOption(col, TOP_K, []entity.Vector{entity.FloatVector(vec)}).
 						WithANNSField("vector").
-						WithOutputFields("id"))
+						WithOutputFields("id").
+						WithConsistencyLevel(entity.ClEventually))
 				if err != nil {
 					return err
 				}

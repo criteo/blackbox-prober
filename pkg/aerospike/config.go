@@ -28,8 +28,11 @@ type AerospikeClientConfig struct {
 	// Config
 	genericConfig *AerospikeEndpointConfig
 
-	// a map keeping information about nodes to enrich metrics
-	nodeInfoCache map[string]*common.ClusterNodeInfo
+	// Live node metadata used to enrich metrics. This is a pointer to a cache owned by the
+	// probe config and refreshed at every discovery run, not a snapshot: the endpoint holding
+	// this config outlives many discovery refreshes (the scheduler only restarts a worker when
+	// the endpoint hash changes), so a snapshot would go stale as soon as a pod changes IP.
+	nodeInfoCache *common.NodeInfoCache
 }
 
 // Config used to configure the endpoint of Aerospike
@@ -125,6 +128,10 @@ type AerospikeProbeConfig struct {
 	AerospikeEndpointConfig AerospikeEndpointConfig `yaml:"client_config,omitempty"`
 	// Check configurations
 	AerospikeChecksConfigs AerospikeChecksConfigs `yaml:"checks_configs,omitempty"`
+
+	// Live node metadata caches, one per cluster, shared with the endpoints built for them.
+	// Kept on the config because it is the only object that survives across discovery runs.
+	nodeInfoCaches map[string]*common.NodeInfoCache
 }
 
 type AerospikeChecksConfigs struct {

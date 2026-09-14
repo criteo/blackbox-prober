@@ -18,6 +18,33 @@ import (
 	"github.com/go-kit/log/level"
 )
 
+// nodeInfoCacheFor returns the live node info cache of a cluster, creating it on first sight.
+// Endpoints keep a pointer to it, so refreshing its content also refreshes the metric labels of
+// the probes already running against that cluster. Only the discovery goroutine builds
+// topologies, so the map itself needs no lock; the cache content is lock-protected for the
+// concurrent check readers.
+func (conf *AerospikeProbeConfig) nodeInfoCacheFor(clusterName string) *common.NodeInfoCache {
+	if conf.nodeInfoCaches == nil {
+		conf.nodeInfoCaches = map[string]*common.NodeInfoCache{}
+	}
+	cache, found := conf.nodeInfoCaches[clusterName]
+	if !found {
+		cache = common.NewNodeInfoCache()
+		conf.nodeInfoCaches[clusterName] = cache
+	}
+	return cache
+}
+
+// pruneNodeInfoCaches drops the caches of clusters that are no longer discovered, so a
+// decommissioned cluster does not keep its node metadata alive for the lifetime of the probe.
+func (conf *AerospikeProbeConfig) pruneNodeInfoCaches(discovered map[string]struct{}) {
+	for clusterName := range conf.nodeInfoCaches {
+		if _, found := discovered[clusterName]; !found {
+			delete(conf.nodeInfoCaches, clusterName)
+		}
+	}
+}
+
 func (conf *AerospikeProbeConfig) buildClusterClientConfig(logger log.Logger, entries []discovery.ServiceEntry) (*AerospikeClientConfig, error) {
 	authEnabled := conf.AerospikeEndpointConfig.AuthEnabled
 	var (
@@ -51,16 +78,20 @@ func (conf *AerospikeProbeConfig) buildClusterClientConfig(logger log.Logger, en
 		clusterName = entries[0].Address
 	}
 
-	nodeInfoCache := map[string]*common.ClusterNodeInfo{}
+	nodeInfo := make(map[string]*common.ClusterNodeInfo, len(entries))
 	hosts := make([]*as.Host, 0, len(entries))
 	for _, entry := range entries {
-		nodeInfoCache[entry.Address] = &common.ClusterNodeInfo{
+		nodeInfo[entry.Address] = &common.ClusterNodeInfo{
 			NodeName: entry.Address,
 			PodName:  entry.PodName,
 			NodeFqdn: entry.NodeFqdn,
 		}
 		hosts = append(hosts, &as.Host{Name: entry.Address, TLSName: tlsHostname, Port: entry.Port})
 	}
+	// Update the cluster cache in place so probes already running against this cluster pick up
+	// the new addresses (pod restart, rescheduling) instead of labelling them "unknown".
+	nodeInfoCache := conf.nodeInfoCacheFor(clusterName)
+	nodeInfoCache.Replace(nodeInfo)
 
 	clusterConfig := AerospikeClientConfig{
 		clusterName: clusterName,
@@ -140,11 +171,13 @@ func (conf *AerospikeProbeConfig) BuildTopology(logger log.Logger, entries []dis
 	clusterMap := topology.NewClusterMap()
 
 	clusterEntries := conf.DiscoveryConfig.GroupNodesByCluster(logger, entries)
+	discoveredClusters := make(map[string]struct{}, len(clusterEntries))
 	for _, clusterGroup := range clusterEntries {
 		clusterConfig, err := conf.buildClusterClientConfig(logger, clusterGroup)
 		if err != nil {
 			return clusterMap, err
 		}
+		discoveredClusters[clusterConfig.clusterName] = struct{}{}
 
 		endpoint := conf.generateEndpointFromEntry(logger, clusterGroup[0], clusterConfig)
 		if len(endpoint.Namespaces) == 0 {
@@ -154,5 +187,6 @@ func (conf *AerospikeProbeConfig) BuildTopology(logger log.Logger, entries []dis
 		cluster := topology.NewCluster(endpoint)
 		clusterMap.AppendCluster(cluster)
 	}
+	conf.pruneNodeInfoCaches(discoveredClusters)
 	return clusterMap, nil
 }

@@ -277,3 +277,95 @@ func TestGenerateEndpointSkipsNotReadyNamespaces(t *testing.T) {
 		})
 	}
 }
+
+func singleClusterEndpoint(t *testing.T, clusterMap topology.ClusterMap) *AerospikeEndpoint {
+	t.Helper()
+	if len(clusterMap.Clusters) != 1 {
+		t.Fatalf("expected one cluster endpoint, got %d", len(clusterMap.Clusters))
+	}
+	for _, cluster := range clusterMap.Clusters {
+		endpoint, ok := cluster.ClusterEndpoint.(*AerospikeEndpoint)
+		if !ok {
+			t.Fatalf("expected AerospikeEndpoint, got %T", cluster.ClusterEndpoint)
+		}
+		return endpoint
+	}
+	return nil
+}
+
+// The scheduler keeps probing with the endpoint built by the first discovery run as long as its
+// hash is unchanged (a pod restart changes no namespace), so that endpoint must see the node
+// metadata of later runs. Otherwise a pod coming back with a new IP is labelled "unknown".
+func TestBuildTopologyRefreshesNodeInfoCacheOfRunningEndpoint(t *testing.T) {
+	config := testProbeConfig()
+	meta := map[string]string{
+		"CLUSTER":                  "cluster-a",
+		"aerospike-monitoring-ns1": "true",
+	}
+
+	clusterMap, err := config.BuildTopology(log.NewNopLogger(), []discovery.ServiceEntry{
+		{Address: "10.0.0.1", Port: 3000, PodName: "aerospike-0", NodeFqdn: "node-1.example.com", Meta: meta},
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	runningEndpoint := singleClusterEndpoint(t, clusterMap)
+
+	// The pod restarts with a new address, on another physical node.
+	_, err = config.BuildTopology(log.NewNopLogger(), []discovery.ServiceEntry{
+		{Address: "10.0.0.2", Port: 3000, PodName: "aerospike-0", NodeFqdn: "node-2.example.com", Meta: meta},
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	info, found := runningEndpoint.ClusterConfig.nodeInfoCache.Get("10.0.0.2")
+	if !found {
+		t.Fatal("expected the running endpoint to resolve the new address of the restarted pod")
+	}
+	if info.PodName != "aerospike-0" || info.NodeFqdn != "node-2.example.com" {
+		t.Fatalf("unexpected node info: %+v", info)
+	}
+	if _, found := runningEndpoint.ClusterConfig.nodeInfoCache.Get("10.0.0.1"); found {
+		t.Error("expected the address of the pod before restart to be dropped")
+	}
+}
+
+func TestBuildTopologyPrunesNodeInfoCacheOfGoneClusters(t *testing.T) {
+	config := testProbeConfig()
+	entry := func(address, cluster string) discovery.ServiceEntry {
+		return discovery.ServiceEntry{
+			Address: address,
+			Port:    3000,
+			Meta: map[string]string{
+				"CLUSTER":                  cluster,
+				"aerospike-monitoring-ns1": "true",
+			},
+		}
+	}
+
+	_, err := config.BuildTopology(log.NewNopLogger(), []discovery.ServiceEntry{
+		entry("10.0.0.1", "cluster-a"),
+		entry("10.0.1.1", "cluster-b"),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(config.nodeInfoCaches) != 2 {
+		t.Fatalf("expected 2 node info caches, got %d", len(config.nodeInfoCaches))
+	}
+
+	// cluster-b is decommissioned: its cache must not outlive its discovery.
+	_, err = config.BuildTopology(log.NewNopLogger(), []discovery.ServiceEntry{
+		entry("10.0.0.1", "cluster-a"),
+	})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if len(config.nodeInfoCaches) != 1 {
+		t.Fatalf("expected 1 node info cache, got %d", len(config.nodeInfoCaches))
+	}
+	if _, found := config.nodeInfoCaches["cluster-a"]; !found {
+		t.Error("expected the cache of the still discovered cluster to be kept")
+	}
+}

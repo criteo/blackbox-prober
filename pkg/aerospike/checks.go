@@ -133,6 +133,16 @@ func hash(str string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
+// nodeInfoFor resolves the metadata used to label the metrics of a node. A node the discovery
+// has not (yet) resolved is labelled "unknown" rather than skipped, so its latencies are still
+// reported.
+func nodeInfoFor(e *AerospikeEndpoint, address string) *common.ClusterNodeInfo {
+	if info, found := e.ClusterConfig.nodeInfoCache.Get(address); found {
+		return info
+	}
+	return &common.ClusterNodeInfo{NodeName: address, NodeFqdn: "unknown", PodName: "unknown"}
+}
+
 func LatencyCheck(p topology.ProbeableEndpoint) error {
 	e, ok := p.(*AerospikeEndpoint)
 	if !ok {
@@ -172,10 +182,7 @@ func latencyCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 		}
 
 		// lookup node fqdn and pod name associated to aerospike endpoint
-		nodeInfo := &common.ClusterNodeInfo{NodeName: node.GetHost().Name, NodeFqdn: "unknown", PodName: "unknown"}
-		if ni, found := e.ClusterConfig.nodeInfoCache[node.GetHost().Name]; found {
-			nodeInfo = ni
-		}
+		nodeInfo := nodeInfoFor(e, node.GetHost().Name)
 
 		// PUT OPERATION
 		labels := []string{"put", node.GetHost().Name, namespace, nodeInfo.NodeFqdn, nodeInfo.PodName, e.ClusterConfig.clusterName, node.GetName()}

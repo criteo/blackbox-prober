@@ -10,6 +10,7 @@ import (
 	"time"
 
 	as "github.com/aerospike/aerospike-client-go/v8"
+	"github.com/criteo/blackbox-prober/pkg/common"
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -349,5 +350,23 @@ func TestAuthCheckHonorsParallelism(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&maxActive); got > maxAuthCheckParallelism {
 		t.Fatalf("expected at most %d active auth checks, got %d", maxAuthCheckParallelism, got)
+	}
+}
+
+func TestNodeInfoForFallsBackToUnknown(t *testing.T) {
+	cache := common.NewNodeInfoCache()
+	cache.Replace(map[string]*common.ClusterNodeInfo{
+		"10.0.0.1": {NodeName: "10.0.0.1", PodName: "aerospike-0", NodeFqdn: "node-1.example.com"},
+	})
+	e := &AerospikeEndpoint{ClusterConfig: &AerospikeClientConfig{nodeInfoCache: cache}}
+
+	known := nodeInfoFor(e, "10.0.0.1")
+	if known.PodName != "aerospike-0" || known.NodeFqdn != "node-1.example.com" {
+		t.Errorf("unexpected node info for a known address: %+v", known)
+	}
+
+	unknown := nodeInfoFor(e, "10.0.0.2")
+	if unknown.NodeName != "10.0.0.2" || unknown.PodName != "unknown" || unknown.NodeFqdn != "unknown" {
+		t.Errorf("unexpected node info for an unknown address: %+v", unknown)
 	}
 }

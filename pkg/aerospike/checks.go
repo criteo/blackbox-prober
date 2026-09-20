@@ -55,6 +55,67 @@ var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 	Help: "Total number of items found to be corrupted for durability",
 }, []string{"namespace", "cluster", "probe_endpoint"})
 
+type deletableCollector interface {
+	prometheus.Collector
+	Delete(prometheus.Labels) bool
+}
+
+// clusterMetricLabels returns the complete label set of c's series belonging to cluster. It
+// collects everything before returning because Collect holds the vec read lock while Delete
+// needs the write lock.
+func clusterMetricLabels(c prometheus.Collector, cluster string) []prometheus.Labels {
+	ch := make(chan prometheus.Metric)
+	go func() {
+		c.Collect(ch)
+		close(ch)
+	}()
+
+	var result []prometheus.Labels
+	for m := range ch {
+		var dm dto.Metric
+		if err := m.Write(&dm); err != nil {
+			continue
+		}
+
+		belongsToCluster := false
+		for _, lp := range dm.GetLabel() {
+			if lp.GetName() == "cluster" && lp.GetValue() == cluster {
+				belongsToCluster = true
+				break
+			}
+		}
+		if !belongsToCluster {
+			continue
+		}
+
+		labels := make(prometheus.Labels, len(dm.GetLabel()))
+		for _, lp := range dm.GetLabel() {
+			labels[lp.GetName()] = lp.GetValue()
+		}
+
+		result = append(result, labels)
+	}
+	return result
+}
+
+// cleanupStaleMetrics deletes this endpoint's series that match none of targets. It collects
+// labels before deleting because Collect holds the vec read lock while Delete needs the write lock.
+func cleanupStaleMetrics[T any](e *AerospikeEndpoint, c deletableCollector, targets []T, matches func(T, prometheus.Labels) bool) {
+	for _, labels := range clusterMetricLabels(c, e.ClusterConfig.clusterName) {
+		keep := false
+		for _, target := range targets {
+			if matches(target, labels) {
+				keep = true
+				break
+			}
+		}
+
+		if !keep {
+			c.Delete(labels)
+		}
+	}
+}
+
 // namespaceCheckParallelism caps latency fanout to the Go scheduler's CPU budget, leaving one
 // P for runtime work, tend/refresh traffic, and other checks. In containers this assumes
 // GOMAXPROCS is set to the pod CPU limit (or derived by the runtime/tooling).
@@ -77,7 +138,7 @@ func namespaceCheckParallelism(namespaceCount int) int {
 // of namespaces active at once. All namespaces run to completion; the first returned error is an
 // execution error for the scheduler. Domain health, such as missing durability keys, is reported
 // through check-specific metrics instead of necessarily being returned as an error.
-func forEachNamespace(e *AerospikeEndpoint, parallelism int, fn func(namespace string) error) error {
+func forEachNamespace(e *AerospikeEndpoint, parallelism int, fn func(index int, namespace string) error) error {
 	if parallelism < 1 {
 		parallelism = 1
 	}
@@ -87,10 +148,10 @@ func forEachNamespace(e *AerospikeEndpoint, parallelism int, fn func(namespace s
 
 	var g errgroup.Group
 	g.SetLimit(parallelism)
-	for _, namespace := range e.Namespaces {
-		namespace := namespace
+	for index, namespace := range e.Namespaces {
+		index, namespace := index, namespace
 		g.Go(func() error {
-			return fn(namespace)
+			return fn(index, namespace)
 		})
 	}
 	return g.Wait()
@@ -143,18 +204,69 @@ func nodeInfoFor(e *AerospikeEndpoint, address string) *common.ClusterNodeInfo {
 	return &common.ClusterNodeInfo{NodeName: address, NodeFqdn: "unknown", PodName: "unknown"}
 }
 
+// opNodeKey identifies the node-describing part of the op_latency / op_latency_failures label
+// set. The whole tuple is the identity, not just the node: a pod restart can keep its name
+// while changing IP address, and a node probed before discovery resolved it exports "unknown"
+// labels. Both leave a series that must be reconciled away.
+type opNodeKey struct {
+	endpoint string // address of the node, as reported by the aerospike client
+	node     string // fqdn of the physical node running the pod
+	pod      string
+	nodeId   string
+}
+
+func opTargetForNode(e *AerospikeEndpoint, node *as.Node) opNodeKey {
+	address := node.GetHost().Name
+	info := nodeInfoFor(e, address)
+	return opNodeKey{endpoint: address, node: info.NodeFqdn, pod: info.PodName, nodeId: node.GetName()}
+}
+
+func opTargetMatchesSeries(target opNodeKey, labels prometheus.Labels) bool {
+	return labels["endpoint"] == target.endpoint &&
+		labels["node"] == target.node &&
+		labels["pod"] == target.pod &&
+		labels["node_id"] == target.nodeId
+}
+
+func opMetricLabels(e *AerospikeEndpoint, operation, namespace string, target opNodeKey) []string {
+	return []string{operation, target.endpoint, namespace, target.node, target.pod, e.ClusterConfig.clusterName, target.nodeId}
+}
+
 func LatencyCheck(p topology.ProbeableEndpoint) error {
 	e, ok := p.(*AerospikeEndpoint)
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
-	return forEachNamespace(e, namespaceCheckParallelism(len(e.Namespaces)), func(namespace string) error {
-		return latencyCheckNamespace(e, namespace)
+
+	targetsByNamespace := make([][]opNodeKey, len(e.Namespaces))
+	err := forEachNamespace(e, namespaceCheckParallelism(len(e.Namespaces)), func(index int, namespace string) error {
+		targets, err := latencyCheckNamespace(e, namespace)
+		targetsByNamespace[index] = targets
+		return err
 	})
+	var retainedTargets []opNodeKey
+	for _, targets := range targetsByNamespace {
+		retainedTargets = append(retainedTargets, targets...)
+	}
+
+	// Without retained targets, the probe did not yield a trustworthy retention set.
+	if len(retainedTargets) > 0 {
+		cleanupStaleMetrics(e, opLatency, retainedTargets, opTargetMatchesSeries)
+		cleanupStaleMetrics(e, opFailuresTotal, retainedTargets, opTargetMatchesSeries)
+	}
+
+	return err
 }
 
-func latencyCheckNamespace(e *AerospikeEndpoint, namespace string) error {
+// latencyCheckNamespace performs the operations for one namespace. It is indirected so unit
+// tests can exercise LatencyCheck with a mocked Aerospike operation.
+var latencyCheckNamespace = func(e *AerospikeEndpoint, namespace string) ([]opNodeKey, error) {
 	keyPrefix := e.ClusterConfig.genericConfig.LatencyKeyPrefix
+	nodes := e.Client.Cluster().GetNodes()
+	targets := make([]opNodeKey, 0, 2*len(nodes))
+	for _, node := range nodes {
+		targets = append(targets, opTargetForNode(e, node))
+	}
 
 	policy := as.NewWritePolicy(0, 3600)                             // Expire after one hour if the delete didn't work
 	policy.MaxRetries = 0                                            // Ensure we never retry (0 is default Client value in v7)
@@ -167,10 +279,10 @@ func latencyCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 	// Instead we should generate one key per partition (number of partitions is known and constant with aerospike => 4096 partitions)
 	// These keys could be generated once in probe lifetime (partition id is the first 12 bits of the digest of the key) and then reused
 	// at each latency check.
-	for range e.Client.Cluster().GetNodes() { // scale the number of latency checks to the number of nodes
+	for range nodes { // scale the number of latency checks to the topology snapshot
 		key, as_err := as.NewKey(namespace, e.ClusterConfig.genericConfig.MonitoringSet, fmt.Sprintf("%s%s", keyPrefix, utils.RandomHex(20)))
 		if as_err != nil {
-			return as_err
+			return targets, as_err
 		}
 		val := as.BinMap{
 			"val": utils.RandomHex(1024),
@@ -178,14 +290,12 @@ func latencyCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 
 		node, err := getWriteNode(e.Client, policy, key)
 		if err != nil {
-			return errors.Wrapf(err, "error when trying to find node for: %s", keyAsStr(key))
+			return targets, errors.Wrapf(err, "error when trying to find node for: %s", keyAsStr(key))
 		}
 
-		// lookup node fqdn and pod name associated to aerospike endpoint
-		nodeInfo := nodeInfoFor(e, node.GetHost().Name)
-
-		// PUT OPERATION
-		labels := []string{"put", node.GetHost().Name, namespace, nodeInfo.NodeFqdn, nodeInfo.PodName, e.ClusterConfig.clusterName, node.GetName()}
+		target := opTargetForNode(e, node)
+		targets = append(targets, target)
+		labels := opMetricLabels(e, "put", namespace, target)
 
 		// PUT OPERATION
 		opPut := func() error {
@@ -194,7 +304,7 @@ func latencyCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 
 		err = ObserveOpLatency(opPut, labels)
 		if err != nil {
-			return errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
+			return targets, errors.Wrapf(err, "record put failed for: %s", keyAsStr(key))
 		}
 		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record put: %s", keyAsStr(key)))
 
@@ -216,7 +326,7 @@ func latencyCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 
 		err = ObserveOpLatency(opGet, labels)
 		if err != nil {
-			return errors.Wrapf(err, "record get failed for: %s", keyAsStr(key))
+			return targets, errors.Wrapf(err, "record get failed for: %s", keyAsStr(key))
 		}
 		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record get: %s", keyAsStr(key)))
 
@@ -236,21 +346,11 @@ func latencyCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 
 		err = ObserveOpLatency(opDelete, labels)
 		if err != nil {
-			return errors.Wrapf(err, "record delete failed for: %s", keyAsStr(key))
+			return targets, errors.Wrapf(err, "record delete failed for: %s", keyAsStr(key))
 		}
 		level.Debug(e.Logger).Log("msg", fmt.Sprintf("record delete: %s", keyAsStr(key)))
 	}
-	return nil
-}
-
-func DurabilityPrepare(p topology.ProbeableEndpoint) error {
-	e, ok := p.(*AerospikeEndpoint)
-	if !ok {
-		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
-	}
-	return forEachNamespace(e, 1, func(namespace string) error {
-		return durabilityPrepareNamespace(e, namespace)
-	})
+	return targets, nil
 }
 
 func durabilityPrepareNamespace(e *AerospikeEndpoint, namespace string) error {
@@ -313,21 +413,49 @@ func durabilityPrepareNamespace(e *AerospikeEndpoint, namespace string) error {
 	return nil
 }
 
+func DurabilityPrepare(p topology.ProbeableEndpoint) error {
+	e, ok := p.(*AerospikeEndpoint)
+	if !ok {
+		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
+	}
+	return forEachNamespace(e, 1, func(_ int, namespace string) error {
+		return durabilityPrepareNamespace(e, namespace)
+	})
+}
+
+func namespaceMatchesSeries(namespace string, labels prometheus.Labels) bool {
+	return labels["namespace"] == namespace
+}
+
 func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	e, ok := p.(*AerospikeEndpoint)
 	if !ok {
 		return fmt.Errorf("error: given endpoint is not an aerospike endpoint")
 	}
-	return forEachNamespace(e, 1, func(namespace string) error {
+
+	err := forEachNamespace(e, 1, func(_ int, namespace string) error {
 		return durabilityCheckNamespace(e, namespace)
 	})
+
+	cleanupStaleMetrics(e, durabilityExpectedItems, e.Namespaces, namespaceMatchesSeries)
+	cleanupStaleMetrics(e, durabilityFoundItems, e.Namespaces, namespaceMatchesSeries)
+	cleanupStaleMetrics(e, durabilityCorruptedItems, e.Namespaces, namespaceMatchesSeries)
+
+	return err
+}
+
+func publishDurabilityMetrics(e *AerospikeEndpoint, namespace string, expected, found, corrupted float64) {
+	durabilityExpectedItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(expected)
+	durabilityFoundItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(found)
+	durabilityCorruptedItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(corrupted)
 }
 
 // durabilityCheckNamespace completes a sweep and publishes durability gauges. Missing records,
 // corrupted values, and read failures are represented by durability_found_items and
 // durability_corrupted_items; they do not fail the scheduler check unless the sweep itself cannot
-// execute far enough to publish those gauges.
-func durabilityCheckNamespace(e *AerospikeEndpoint, namespace string) error {
+// execute far enough to publish those gauges. It is indirected so unit tests can exercise
+// DurabilityCheck with a mocked Aerospike operation.
+var durabilityCheckNamespace = func(e *AerospikeEndpoint, namespace string) error {
 	policy := as.NewPolicy()
 	policy.MaxRetries = 2                                            // 2 is default Client value in v7
 	policy.ReplicaPolicy = as.SEQUENCE                               // SEQUENCE is default Client value (alternate across master/replica in case of errors)
@@ -361,9 +489,9 @@ func durabilityCheckNamespace(e *AerospikeEndpoint, namespace string) error {
 		}
 		level.Debug(e.Logger).Log("msg", fmt.Sprintf("durability record validated: %s (%s)", keyAsStr(key), recVal.Bins["val"]))
 	}
-	durabilityExpectedItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(float64(keyRange))
-	durabilityFoundItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_found_items)
-	durabilityCorruptedItems.WithLabelValues(namespace, e.ClusterConfig.clusterName, e.GetName()).Set(total_corrupted_items)
+
+	publishDurabilityMetrics(e, namespace, float64(keyRange), total_found_items, total_corrupted_items)
+
 	return nil
 }
 
@@ -386,18 +514,11 @@ func authCheckParallelism(targetCount int) int {
 	return maxAuthCheckParallelism
 }
 
-// authNodeKey identifies a probed node by its stable aerospike node id and its current IP.
-// It is comparable, so it doubles as the map key when reconciling live vs. departed series.
-type authNodeKey struct {
+// authTarget is a single node to probe with a fresh authentication.
+type authTarget struct {
 	nodeId string
 	ip     string
-}
-
-// authTarget is a single node to probe with a fresh authentication. It embeds authNodeKey
-// (the identity used for metrics) and adds the host to dial (needed for its port / TLS name).
-type authTarget struct {
-	authNodeKey
-	host *as.Host
+	host   *as.Host
 }
 
 // authTargets and freshLogin are indirected through package variables so unit tests can
@@ -410,8 +531,9 @@ var (
 		for _, node := range nodes {
 			host := node.GetHost()
 			targets = append(targets, authTarget{
-				authNodeKey: authNodeKey{nodeId: node.GetName(), ip: host.Name},
-				host:        host,
+				nodeId: node.GetName(),
+				ip:     host.Name,
+				host:   host,
 			})
 		}
 		return targets
@@ -438,6 +560,10 @@ var (
 	}
 )
 
+func observeAuthResult(e *AerospikeEndpoint, target authTarget, status string) {
+	authCheckTotal.WithLabelValues(e.ClusterConfig.clusterName, target.ip, target.nodeId, status).Inc()
+}
+
 // AuthCheck verifies that a brand-new client could still authenticate against the cluster,
 // contrary to latency and durability checks that reuse an already-authenticated client, and
 // that keeps working even after server-side auth breaks (LDAP down, credentials revoked,
@@ -454,14 +580,9 @@ func AuthCheck(p topology.ProbeableEndpoint) error {
 		return nil
 	}
 
-	// Build the live-node set up front (in this goroutine) so the concurrent probes below
-	// don't write the map. Fresh logins bypass the client pool, so bound the number of
+	// Capture targets once. Fresh logins bypass the client pool, so bound the number of
 	// concurrent dials/logins to avoid a burst against Aerospike or the auth backend.
 	targets := authTargets(e)
-	current := make(map[authNodeKey]struct{}, len(targets))
-	for _, target := range targets {
-		current[target.authNodeKey] = struct{}{}
-	}
 
 	var g errgroup.Group
 	g.SetLimit(authCheckParallelism(len(targets)))
@@ -469,7 +590,7 @@ func AuthCheck(p topology.ProbeableEndpoint) error {
 		target := target
 		g.Go(func() error {
 			status, err := freshLogin(e, target.host)
-			authCheckTotal.WithLabelValues(e.ClusterConfig.clusterName, target.ip, target.nodeId, status).Inc()
+			observeAuthResult(e, target, status)
 
 			switch status {
 			case authStatusAuthFail:
@@ -489,58 +610,12 @@ func AuthCheck(p topology.ProbeableEndpoint) error {
 	// "auth is broken".
 	err := g.Wait()
 
-	e.cleanupAuthMetrics(current)
-	return err
-}
-
-// cleanupAuthMetrics deletes auth_check_total series for nodes that are no longer live (pod
-// restart with a new IP, node replacement, downscale). Without this the departed node's
-// counters would flatline forever, false-firing "counter must keep increasing" alerts and
-// growing cardinality as node IPs churn.
-//
-// Rather than tracking previously-seen nodes, it reconciles against the live set passed in:
-// it reads back this endpoint's currently-exported series and drops any whose node is absent
-// from `current`. The whole channel is drained before deleting because Collect holds a read
-// lock for its full duration and DeletePartialMatch needs the write lock.
-func (e *AerospikeEndpoint) cleanupAuthMetrics(current map[authNodeKey]struct{}) {
-	ch := make(chan prometheus.Metric)
-	go func() {
-		authCheckTotal.Collect(ch)
-		close(ch)
-	}()
-
-	stale := make(map[authNodeKey]struct{})
-	for m := range ch {
-		var dm dto.Metric
-		if err := m.Write(&dm); err != nil {
-			continue
-		}
-		var cluster, endpoint, nodeId string
-		for _, lp := range dm.GetLabel() {
-			switch lp.GetName() {
-			case "cluster":
-				cluster = lp.GetValue()
-			case "endpoint":
-				endpoint = lp.GetValue()
-			case "node_id":
-				nodeId = lp.GetValue()
-			}
-		}
-		// Only touch series belonging to this cluster (the vec is shared across clusters).
-		if cluster != e.ClusterConfig.clusterName {
-			continue
-		}
-		key := authNodeKey{nodeId: nodeId, ip: endpoint}
-		if _, ok := current[key]; !ok {
-			stale[key] = struct{}{}
-		}
-	}
-
-	for key := range stale {
-		authCheckTotal.DeletePartialMatch(prometheus.Labels{
-			"cluster":  e.ClusterConfig.clusterName,
-			"endpoint": key.ip,
-			"node_id":  key.nodeId,
+	// Without targets, the probe did not yield a trustworthy retention set.
+	if len(targets) > 0 {
+		cleanupStaleMetrics(e, authCheckTotal, targets, func(target authTarget, labels prometheus.Labels) bool {
+			return labels["node_id"] == target.nodeId && labels["endpoint"] == target.ip
 		})
 	}
+
+	return err
 }

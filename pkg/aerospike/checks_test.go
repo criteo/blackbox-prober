@@ -22,12 +22,12 @@ func authTestCluster(t *testing.T) string {
 	return fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano())
 }
 
-// countAuthCheckSeries counts the number of auth_check_total series currently exported for a given cluster.
-func countAuthCheckSeries(t *testing.T, cluster string) int {
+// countClusterSeries counts the series currently exported by c for a given cluster.
+func countClusterSeries(t *testing.T, c prometheus.Collector, cluster string) int {
 	t.Helper()
 	ch := make(chan prometheus.Metric)
 	go func() {
-		authCheckTotal.Collect(ch)
+		c.Collect(ch)
 		close(ch)
 	}()
 	n := 0
@@ -45,14 +45,45 @@ func countAuthCheckSeries(t *testing.T, cluster string) int {
 	return n
 }
 
+// countAuthCheckSeries counts the number of auth_check_total series currently exported for a given cluster.
+func countAuthCheckSeries(t *testing.T, cluster string) int {
+	t.Helper()
+	return countClusterSeries(t, authCheckTotal, cluster)
+}
+
+func observeLatencyMetric(e *AerospikeEndpoint, operation, namespace string, target opNodeKey) {
+	ObserveOpLatency(func() error { return nil }, opMetricLabels(e, operation, namespace, target))
+}
+
+// opLatencyCount returns the number of observations of an existing op_latency series. It must
+// only be called for a series expected to exist: looking one up creates it.
+func opLatencyCount(t *testing.T, labels []string) uint64 {
+	t.Helper()
+	observer, err := opLatency.GetMetricWithLabelValues(labels...)
+	if err != nil {
+		t.Fatalf("unexpected error getting op_latency series: %v", err)
+	}
+	metric, ok := observer.(prometheus.Metric)
+	if !ok {
+		t.Fatalf("expected the histogram to implement prometheus.Metric, got %T", observer)
+	}
+	var dm dto.Metric
+	if err := metric.Write(&dm); err != nil {
+		t.Fatalf("unexpected error writing op_latency series: %v", err)
+	}
+	return dm.GetHistogram().GetSampleCount()
+}
+
 func TestForEachNamespace(t *testing.T) {
 	e := &AerospikeEndpoint{Namespaces: []string{"a", "b", "c"}}
 
 	var mu sync.Mutex
 	seen := map[string]int{}
-	err := forEachNamespace(e, 2, func(ns string) error {
+	indexes := map[string]int{}
+	err := forEachNamespace(e, 2, func(index int, ns string) error {
 		mu.Lock()
 		seen[ns]++
+		indexes[ns] = index
 		mu.Unlock()
 		return nil
 	})
@@ -62,6 +93,9 @@ func TestForEachNamespace(t *testing.T) {
 	if len(seen) != 3 || seen["a"] != 1 || seen["b"] != 1 || seen["c"] != 1 {
 		t.Fatalf("expected each namespace probed exactly once, got %v", seen)
 	}
+	if indexes["a"] != 0 || indexes["b"] != 1 || indexes["c"] != 2 {
+		t.Errorf("unexpected namespace indexes: %v", indexes)
+	}
 }
 
 // TestForEachNamespaceErrorIsolation locks in the guarantee that an error on one namespace
@@ -70,7 +104,7 @@ func TestForEachNamespaceErrorIsolation(t *testing.T) {
 	e := &AerospikeEndpoint{Namespaces: []string{"a", "b", "c"}}
 
 	var ran int32
-	err := forEachNamespace(e, 2, func(ns string) error {
+	err := forEachNamespace(e, 2, func(_ int, ns string) error {
 		atomic.AddInt32(&ran, 1)
 		if ns == "b" {
 			return errors.New("boom")
@@ -88,7 +122,7 @@ func TestForEachNamespaceErrorIsolation(t *testing.T) {
 func TestForEachNamespaceEmpty(t *testing.T) {
 	e := &AerospikeEndpoint{}
 	called := false
-	err := forEachNamespace(e, 2, func(ns string) error {
+	err := forEachNamespace(e, 2, func(_ int, ns string) error {
 		called = true
 		return nil
 	})
@@ -102,7 +136,7 @@ func TestForEachNamespaceHonorsParallelism(t *testing.T) {
 
 	var active int32
 	var maxActive int32
-	err := forEachNamespace(e, 2, func(ns string) error {
+	err := forEachNamespace(e, 2, func(_ int, ns string) error {
 		current := atomic.AddInt32(&active, 1)
 		for {
 			max := atomic.LoadInt32(&maxActive)
@@ -154,31 +188,6 @@ func TestNamespaceCheckParallelismSingleCPU(t *testing.T) {
 	}
 }
 
-func TestCleanupAuthMetrics(t *testing.T) {
-	cluster := authTestCluster(t)
-	// A live node (kept) and a departed node with two status series (removed).
-	authCheckTotal.WithLabelValues(cluster, "10.0.0.2", "B", authStatusSuccess).Inc()
-	authCheckTotal.WithLabelValues(cluster, "10.0.0.1", "A", authStatusSuccess).Inc()
-	authCheckTotal.WithLabelValues(cluster, "10.0.0.1", "A", authStatusAuthFail).Inc()
-
-	if got := countAuthCheckSeries(t, cluster); got != 3 {
-		t.Fatalf("precondition: expected 3 seeded series, got %d", got)
-	}
-
-	e := &AerospikeEndpoint{ClusterConfig: &AerospikeClientConfig{clusterName: cluster}}
-	e.cleanupAuthMetrics(map[authNodeKey]struct{}{
-		{nodeId: "B", ip: "10.0.0.2"}: {},
-	})
-
-	if got := countAuthCheckSeries(t, cluster); got != 1 {
-		t.Fatalf("expected only the live node's series to remain, got %d", got)
-	}
-	// The surviving series must keep its accumulated value (cleanup must not reset it).
-	if got := testutil.ToFloat64(authCheckTotal.WithLabelValues(cluster, "10.0.0.2", "B", authStatusSuccess)); got != 1 {
-		t.Errorf("live node series should be untouched, got value %v", got)
-	}
-}
-
 func TestAuthCheck(t *testing.T) {
 	cluster := authTestCluster(t)
 	e := &AerospikeEndpoint{
@@ -191,16 +200,19 @@ func TestAuthCheck(t *testing.T) {
 	}
 
 	// A stale series from a node that is no longer live; AuthCheck must clean it up.
-	authCheckTotal.WithLabelValues(cluster, "10.9.9.9", "Z", authStatusSuccess).Inc()
+	observeAuthResult(e, authTarget{nodeId: "Z", ip: "10.9.9.9"}, authStatusSuccess)
+	otherCluster := cluster + "-other"
+	otherEndpoint := &AerospikeEndpoint{ClusterConfig: &AerospikeClientConfig{clusterName: otherCluster}}
+	observeAuthResult(otherEndpoint, authTarget{nodeId: "Z", ip: "10.9.9.9"}, authStatusSuccess)
 
 	origTargets, origLogin := authTargets, freshLogin
 	defer func() { authTargets, freshLogin = origTargets, origLogin }()
 
 	authTargets = func(_ *AerospikeEndpoint) []authTarget {
 		return []authTarget{
-			{authNodeKey: authNodeKey{nodeId: "A", ip: "10.0.0.1"}, host: &as.Host{Name: "10.0.0.1"}},
-			{authNodeKey: authNodeKey{nodeId: "B", ip: "10.0.0.2"}, host: &as.Host{Name: "10.0.0.2"}},
-			{authNodeKey: authNodeKey{nodeId: "C", ip: "10.0.0.3"}, host: &as.Host{Name: "10.0.0.3"}},
+			{nodeId: "A", ip: "10.0.0.1", host: &as.Host{Name: "10.0.0.1"}},
+			{nodeId: "B", ip: "10.0.0.2", host: &as.Host{Name: "10.0.0.2"}},
+			{nodeId: "C", ip: "10.0.0.3", host: &as.Host{Name: "10.0.0.3"}},
 		}
 	}
 	freshLogin = func(_ *AerospikeEndpoint, host *as.Host) (string, error) {
@@ -232,6 +244,29 @@ func TestAuthCheck(t *testing.T) {
 	if got := countAuthCheckSeries(t, cluster); got != 3 {
 		t.Errorf("expected 3 series after cleanup of the departed node, got %d", got)
 	}
+	if got := countAuthCheckSeries(t, otherCluster); got != 1 {
+		t.Errorf("expected the other cluster's series to be kept, got %d", got)
+	}
+}
+
+func TestAuthCheckSkipsCleanupWithoutTargets(t *testing.T) {
+	cluster := authTestCluster(t)
+	e := &AerospikeEndpoint{
+		ClusterConfig: &AerospikeClientConfig{clusterName: cluster, authEnabled: true},
+		Logger:        log.NewNopLogger(),
+	}
+	observeAuthResult(e, authTarget{nodeId: "Z", ip: "10.9.9.9"}, authStatusSuccess)
+
+	origTargets := authTargets
+	defer func() { authTargets = origTargets }()
+	authTargets = func(_ *AerospikeEndpoint) []authTarget { return nil }
+
+	if err := AuthCheck(e); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if got := countAuthCheckSeries(t, cluster); got != 1 {
+		t.Errorf("expected existing auth series to remain, got %d", got)
+	}
 }
 
 // TestAuthCheckConnectionErrorNotFailure verifies that a pure connectivity failure is
@@ -251,7 +286,7 @@ func TestAuthCheckConnectionErrorNotFailure(t *testing.T) {
 	defer func() { authTargets, freshLogin = origTargets, origLogin }()
 
 	authTargets = func(_ *AerospikeEndpoint) []authTarget {
-		return []authTarget{{authNodeKey: authNodeKey{nodeId: "A", ip: "10.1.0.1"}, host: &as.Host{Name: "10.1.0.1"}}}
+		return []authTarget{{nodeId: "A", ip: "10.1.0.1", host: &as.Host{Name: "10.1.0.1"}}}
 	}
 	freshLogin = func(_ *AerospikeEndpoint, _ *as.Host) (string, error) {
 		return authStatusConnError, errors.New("dial timeout")
@@ -322,8 +357,9 @@ func TestAuthCheckHonorsParallelism(t *testing.T) {
 	for i := 0; i < maxAuthCheckParallelism+3; i++ {
 		host := fmt.Sprintf("10.2.0.%d", i)
 		targets = append(targets, authTarget{
-			authNodeKey: authNodeKey{nodeId: fmt.Sprintf("N%d", i), ip: host},
-			host:        &as.Host{Name: host},
+			nodeId: fmt.Sprintf("N%d", i),
+			ip:     host,
+			host:   &as.Host{Name: host},
 		})
 	}
 	authTargets = func(_ *AerospikeEndpoint) []authTarget {
@@ -350,6 +386,147 @@ func TestAuthCheckHonorsParallelism(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&maxActive); got > maxAuthCheckParallelism {
 		t.Fatalf("expected at most %d active auth checks, got %d", maxAuthCheckParallelism, got)
+	}
+}
+
+func TestLatencyCheckRemovesStaleSeries(t *testing.T) {
+	cluster := authTestCluster(t)
+	current := opNodeKey{endpoint: "10.0.0.1", node: "node-1.example.com", pod: "aerospike-0", nodeId: "A"}
+	departed := opNodeKey{endpoint: "10.0.0.9", node: "node-9.example.com", pod: "aerospike-9", nodeId: "Z"}
+	unknown := opNodeKey{endpoint: current.endpoint, node: "unknown", pod: "unknown", nodeId: current.nodeId}
+	e := &AerospikeEndpoint{
+		Namespaces:    []string{"ns1"},
+		ClusterConfig: &AerospikeClientConfig{clusterName: cluster},
+		Logger:        log.NewNopLogger(),
+	}
+	observeLatencyMetric(e, "put", "ns1", departed)
+	observeLatencyMetric(e, "put", "ns1", unknown)
+
+	origCheck := latencyCheckNamespace
+	defer func() { latencyCheckNamespace = origCheck }()
+	latencyCheckNamespace = func(e *AerospikeEndpoint, namespace string) ([]opNodeKey, error) {
+		observeLatencyMetric(e, "put", namespace, current)
+		return []opNodeKey{current}, nil
+	}
+
+	if err := LatencyCheck(e); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if got := countClusterSeries(t, opLatency, cluster); got != 1 {
+		t.Errorf("expected only the current op_latency series to remain, got %d", got)
+	}
+	if got := countClusterSeries(t, opFailuresTotal, cluster); got != 1 {
+		t.Errorf("expected only the current op_latency_failures series to remain, got %d", got)
+	}
+	if got := opLatencyCount(t, opMetricLabels(e, "put", "ns1", current)); got != 1 {
+		t.Errorf("current op_latency series should keep its observation, got %d", got)
+	}
+}
+
+func TestLatencyCheckKeepsEffectiveTargetSeries(t *testing.T) {
+	cluster := authTestCluster(t)
+	snapshotTarget := opNodeKey{endpoint: "10.0.0.1", node: "unknown", pod: "unknown", nodeId: "A"}
+	effectiveTarget := opNodeKey{endpoint: "10.0.0.1", node: "node-1.example.com", pod: "aerospike-0", nodeId: "A"}
+	e := &AerospikeEndpoint{
+		Namespaces:    []string{"ns1"},
+		ClusterConfig: &AerospikeClientConfig{clusterName: cluster},
+		Logger:        log.NewNopLogger(),
+	}
+
+	origCheck := latencyCheckNamespace
+	defer func() { latencyCheckNamespace = origCheck }()
+	latencyCheckNamespace = func(e *AerospikeEndpoint, namespace string) ([]opNodeKey, error) {
+		observeLatencyMetric(e, "put", namespace, effectiveTarget)
+		return []opNodeKey{snapshotTarget, effectiveTarget}, nil
+	}
+
+	if err := LatencyCheck(e); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if got := countClusterSeries(t, opLatency, cluster); got != 1 {
+		t.Errorf("expected the effective target's op_latency series to remain, got %d", got)
+	}
+	if got := countClusterSeries(t, opFailuresTotal, cluster); got != 1 {
+		t.Errorf("expected the effective target's op_latency_failures series to remain, got %d", got)
+	}
+}
+
+func TestLatencyCheckSkipsCleanupWithoutTargets(t *testing.T) {
+	cluster := authTestCluster(t)
+	stale := opNodeKey{endpoint: "10.0.0.9", node: "node-9.example.com", pod: "aerospike-9", nodeId: "Z"}
+	e := &AerospikeEndpoint{
+		Namespaces:    []string{"ns1"},
+		ClusterConfig: &AerospikeClientConfig{clusterName: cluster},
+		Logger:        log.NewNopLogger(),
+	}
+	observeLatencyMetric(e, "put", "ns1", stale)
+
+	origCheck := latencyCheckNamespace
+	defer func() { latencyCheckNamespace = origCheck }()
+	latencyCheckNamespace = func(_ *AerospikeEndpoint, _ string) ([]opNodeKey, error) {
+		return nil, nil
+	}
+
+	if err := LatencyCheck(e); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if got := countClusterSeries(t, opLatency, cluster); got != 1 {
+		t.Errorf("expected existing op_latency series to remain, got %d", got)
+	}
+	if got := countClusterSeries(t, opFailuresTotal, cluster); got != 1 {
+		t.Errorf("expected existing op_latency_failures series to remain, got %d", got)
+	}
+}
+
+func TestDurabilityCheckRemovesStaleSeries(t *testing.T) {
+	cluster := authTestCluster(t)
+	e := &AerospikeEndpoint{
+		Name:          "cluster-a",
+		Namespaces:    []string{"live"},
+		ClusterConfig: &AerospikeClientConfig{clusterName: cluster},
+	}
+	publishDurabilityMetrics(e, "stale", 3, 2, 1)
+
+	origCheck := durabilityCheckNamespace
+	defer func() { durabilityCheckNamespace = origCheck }()
+	durabilityCheckNamespace = func(e *AerospikeEndpoint, namespace string) error {
+		publishDurabilityMetrics(e, namespace, 3, 2, 1)
+		return nil
+	}
+
+	if err := DurabilityCheck(e); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	for _, metric := range []prometheus.Collector{
+		durabilityExpectedItems,
+		durabilityFoundItems,
+		durabilityCorruptedItems,
+	} {
+		if got := countClusterSeries(t, metric, cluster); got != 1 {
+			t.Errorf("expected only the live namespace series to remain, got %d", got)
+		}
+	}
+}
+
+func TestDurabilityCheckRemovesAllSeriesWithoutNamespaces(t *testing.T) {
+	cluster := authTestCluster(t)
+	e := &AerospikeEndpoint{
+		Name:          "cluster-a",
+		ClusterConfig: &AerospikeClientConfig{clusterName: cluster},
+	}
+	publishDurabilityMetrics(e, "stale", 3, 2, 1)
+
+	if err := DurabilityCheck(e); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	for _, metric := range []prometheus.Collector{
+		durabilityExpectedItems,
+		durabilityFoundItems,
+		durabilityCorruptedItems,
+	} {
+		if got := countClusterSeries(t, metric, cluster); got != 0 {
+			t.Errorf("expected all durability series to be removed, got %d", got)
+		}
 	}
 }
 

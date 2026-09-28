@@ -49,13 +49,13 @@ type MilvusEndpointConfig struct {
 
 var (
 	defaultMilvusEndpointConfig = MilvusEndpointConfig{
-		UsernameEnv:                    "MILVUS_USERNAME",
-		PasswordEnv:                    "MILVUS_PASSWORD",
-		TLSTag:                         "tls",
-		MonitoringDatabase:             "monitoring",
-		MonitoringCollectionLatencyRW:  "monitoring_latency_rw",
-		MonitoringCollectionLatencyRO:  "monitoring_latency_ro",
-		MonitoringCollectionDurability: "monitoring_durability",
+		UsernameEnv:        "MILVUS_USERNAME",
+		PasswordEnv:        "MILVUS_PASSWORD",
+		TLSTag:             "tls",
+		MonitoringDatabase: "monitoring",
+		MonitoringCollectionLatencyRW:  "monitoring_latency_hnsw_rw",
+		MonitoringCollectionLatencyRO:  "monitoring_latency_hnsw_ro",
+		MonitoringCollectionDurability: "monitoring_durability_hnsw",
 
 		LatencyRWKeyPrefix:      "latency_rw_",
 		LatencyInitKeyPrefix:    "latency_init_",

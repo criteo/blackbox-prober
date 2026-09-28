@@ -57,9 +57,12 @@ var durabilityCorruptedItems = promauto.NewGaugeVec(prometheus.GaugeOpts{
 
 const (
 	// Vector setup
-	DIMENSION   = 100
-	TOP_K       = 1
-	METRIC_TYPE = entity.COSINE
+	DIMENSION            = 101
+	METRIC_TYPE          = entity.IP
+	HNSW_M               = 32
+	HNSW_EF_CONSTRUCTION = 400
+	HNSW_EF_SEARCH       = 64
+	TOP_K                = 1
 
 	// Init
 	MAX_VARCHAR_LEN         = 256
@@ -203,7 +206,7 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 	{
 		tctx, indexCancel := context.WithTimeout(ctx, e.Config.IndexTimeout)
 		defer indexCancel()
-		idx := mvindex.NewFlatIndex(METRIC_TYPE)
+		idx := mvindex.NewHNSWIndex(METRIC_TYPE, HNSW_M, HNSW_EF_CONSTRUCTION)
 		createIdxTask, err := e.Client.CreateIndex(tctx, milvusclient.NewCreateIndexOption(collectionName, "vector", idx))
 		if err != nil {
 			return errors.Wrap(err, "failed to create index")
@@ -212,7 +215,7 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 			return errors.Wrap(err, "failed to await index creation")
 		}
 	}
-	level.Info(e.Logger).Log("msg", "Created FLAT index", "collection", collectionName)
+	level.Info(e.Logger).Log("msg", "Created HNSW index", "collection", collectionName)
 
 	{
 		tctx, loadCancel := context.WithTimeout(ctx, e.Config.LoadTimeout)
@@ -421,6 +424,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			rs, err := e.Client.Search(searchCtx,
 				milvusclient.NewSearchOption(col, TOP_K, qvecs).
 					WithANNSField("vector").
+					WithAnnParam(mvindex.NewHNSWAnnParam(HNSW_EF_SEARCH)).
 					WithOutputFields("id"))
 			if err != nil {
 				return err
@@ -508,6 +512,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 				rs, err := e.Client.Search(searchRoCtx,
 					milvusclient.NewSearchOption(col, TOP_K, []entity.Vector{entity.FloatVector(vec)}).
 						WithANNSField("vector").
+						WithAnnParam(mvindex.NewHNSWAnnParam(HNSW_EF_SEARCH)).
 						WithOutputFields("id").
 						WithConsistencyLevel(entity.ClEventually))
 				if err != nil {

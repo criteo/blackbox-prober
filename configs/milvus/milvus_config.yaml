@@ -24,9 +24,9 @@ client_config:
   ### Probe discovery configuration ###
   ### Probe configuration ###
   monitoring_database: monitoring
-  monitoring_collection_latency_rw: monitoring_latency_rw
-  monitoring_collection_latency: monitoring_latency_ro
-  monitoring_collection_durability: monitoring_durability
+  monitoring_collection_latency_rw: monitoring_latency_hnsw_rw
+  monitoring_collection_latency: monitoring_latency_hnsw_ro
+  monitoring_collection_durability: monitoring_durability_hnsw
   latency_rw_key_prefix: latency_rw_
   latency_init_key_prefix: latency_init_
   durability_key_prefix: durability_

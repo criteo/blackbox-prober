@@ -64,6 +64,13 @@ const (
 	HNSW_EF_SEARCH       = 64
 	TOP_K                = 1
 
+	INDEX_TYPE = mvindex.HNSW
+	SHARD_NUM  = 2
+
+	// Row count of the durability collection. Must stay <= 16384, the max
+	// query result window Milvus allows for a single Query call.
+	DURABILITY_ITEMS = 10000
+
 	// Init
 	MAX_VARCHAR_LEN         = 256
 	INITIAL_VALUE_HEX_BYTES = 128 // 128 hex chars <= 256
@@ -79,6 +86,14 @@ func ObserveOpLatency(op func() error, labels []string) error {
 		opFailuresTotal.WithLabelValues(labels...).Add(0)
 	}
 	return err
+}
+
+// annParam returns the search-time param matching INDEX_TYPE.
+func annParam() mvindex.AnnParam {
+	if INDEX_TYPE == mvindex.HNSW {
+		return mvindex.NewHNSWAnnParam(HNSW_EF_SEARCH)
+	}
+	return nil
 }
 
 func hash(str string) string {
@@ -198,7 +213,7 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 		WithField(entity.NewField().WithName("value").WithDataType(entity.FieldTypeVarChar).WithMaxLength(MAX_VARCHAR_LEN)).
 		WithField(entity.NewField().WithName("vector").WithDataType(entity.FieldTypeFloatVector).WithDim(DIMENSION))
 
-	if err := e.Client.CreateCollection(ctx, milvusclient.NewCreateCollectionOption(collectionName, schema).WithConsistencyLevel(cl)); err != nil {
+	if err := e.Client.CreateCollection(ctx, milvusclient.NewCreateCollectionOption(collectionName, schema).WithConsistencyLevel(cl).WithShardNum(SHARD_NUM)); err != nil {
 		return errors.Wrap(err, "failed to create collection")
 	}
 	level.Info(e.Logger).Log("msg", "Created collection", "collection", collectionName)
@@ -206,7 +221,12 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 	{
 		tctx, indexCancel := context.WithTimeout(ctx, e.Config.IndexTimeout)
 		defer indexCancel()
-		idx := mvindex.NewHNSWIndex(METRIC_TYPE, HNSW_M, HNSW_EF_CONSTRUCTION)
+		var idx mvindex.Index
+		if INDEX_TYPE == mvindex.HNSW {
+			idx = mvindex.NewHNSWIndex(METRIC_TYPE, HNSW_M, HNSW_EF_CONSTRUCTION)
+		} else {
+			idx = mvindex.NewFlatIndex(METRIC_TYPE)
+		}
 		createIdxTask, err := e.Client.CreateIndex(tctx, milvusclient.NewCreateIndexOption(collectionName, "vector", idx))
 		if err != nil {
 			return errors.Wrap(err, "failed to create index")
@@ -215,7 +235,7 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 			return errors.Wrap(err, "failed to await index creation")
 		}
 	}
-	level.Info(e.Logger).Log("msg", "Created HNSW index", "collection", collectionName)
+	level.Info(e.Logger).Log("msg", "Created index", "collection", collectionName, "type", string(INDEX_TYPE))
 
 	{
 		tctx, loadCancel := context.WithTimeout(ctx, e.Config.LoadTimeout)
@@ -233,10 +253,10 @@ func ensureCollection(ctx context.Context, e *MilvusEndpoint, collectionName str
 	return nil
 }
 
-// initCollectionIfNeeded populates a collection with INIT_ITEMS_PER_COL items once.
-func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionName, keyPrefix string) error {
+// initCollectionIfNeeded populates a collection with `items` items once.
+func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionName, keyPrefix string, items int) error {
 	flagKey := fmt.Sprintf("%s%s", keyPrefix, e.Config.InitFlagKey)
-	expectedFlagValue := fmt.Sprintf("v1:%d", e.Config.InitItemsPerCollection)
+	expectedFlagValue := fmt.Sprintf("v1:%d", items)
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
 	defer queryCancel()
@@ -254,13 +274,13 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 		}
 	}
 
-	level.Info(e.Logger).Log("msg", "Initializing collection items", "collection", collectionName, "count", e.Config.InitItemsPerCollection)
+	level.Info(e.Logger).Log("msg", "Initializing collection items", "collection", collectionName, "count", items)
 
 	batchSize := 1000
-	for base := 0; base < e.Config.InitItemsPerCollection; base += batchSize {
+	for base := 0; base < items; base += batchSize {
 		end := base + batchSize
-		if end > e.Config.InitItemsPerCollection {
-			end = e.Config.InitItemsPerCollection
+		if end > items {
+			end = items
 		}
 		n := end - base
 
@@ -302,7 +322,7 @@ func initCollectionIfNeeded(ctx context.Context, e *MilvusEndpoint, collectionNa
 
 		_, err := e.Client.Upsert(insertInitFlagCtx,
 			milvusclient.NewColumnBasedInsertOption(collectionName).
-				WithInt64Column("id", []int64{int64(e.Config.InitItemsPerCollection)}).
+				WithInt64Column("id", []int64{int64(items)}).
 				WithVarcharColumn("key", []string{flagKey}).
 				WithVarcharColumn("value", []string{expectedFlagValue}).
 				WithFloatVectorColumn("vector", DIMENSION, [][]float32{vec}),
@@ -344,14 +364,14 @@ func LatencyPrepare(p topology.ProbeableEndpoint) error {
 	if err := ensureCollection(ctx, e, e.Config.MonitoringCollectionLatencyRW, entity.ClStrong); err != nil {
 		return errors.Wrapf(err, "ensure %s", e.Config.MonitoringCollectionLatencyRW)
 	}
-	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionLatencyRW, e.Config.LatencyInitKeyPrefix); err != nil {
+	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionLatencyRW, e.Config.LatencyInitKeyPrefix, e.Config.InitItemsPerCollection); err != nil {
 		return errors.Wrapf(err, "init latency %s", e.Config.MonitoringCollectionLatencyRW)
 	}
 
 	if err := ensureCollection(ctx, e, e.Config.MonitoringCollectionLatencyRO, entity.DefaultConsistencyLevel); err != nil {
 		return errors.Wrapf(err, "ensure %s", e.Config.MonitoringCollectionLatencyRO)
 	}
-	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionLatencyRO, e.Config.LatencyInitKeyPrefix); err != nil {
+	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionLatencyRO, e.Config.LatencyInitKeyPrefix, e.Config.InitItemsPerCollection); err != nil {
 		return errors.Wrapf(err, "init latency %s", e.Config.MonitoringCollectionLatencyRO)
 	}
 
@@ -424,7 +444,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 			rs, err := e.Client.Search(searchCtx,
 				milvusclient.NewSearchOption(col, TOP_K, qvecs).
 					WithANNSField("vector").
-					WithAnnParam(mvindex.NewHNSWAnnParam(HNSW_EF_SEARCH)).
+					WithAnnParam(annParam()).
 					WithOutputFields("id"))
 			if err != nil {
 				return err
@@ -436,11 +456,13 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 				if rs[i].IDs == nil || rs[i].IDs.Len() == 0 {
 					return errors.Errorf("empty search result for i=%d", i)
 				}
+				// Index type. The top-1 exact-match checks only run for FLAT: HNSW is
+				// approximate, so its top-1 is not guaranteed to be the query vector itself.
 				topIDCol, ok := rs[i].IDs.(*mvcol.ColumnInt64)
 				if !ok || len(topIDCol.Data()) == 0 {
 					return errors.Errorf("unexpected id column for i=%d", i)
 				}
-				if topIDCol.Data()[0] != ids[i] {
+				if INDEX_TYPE == mvindex.Flat && topIDCol.Data()[0] != ids[i] {
 					return errors.Errorf("top-1 mismatch for i=%d: got %d want %d", i, topIDCol.Data()[0], ids[i])
 				}
 			}
@@ -512,7 +534,7 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 				rs, err := e.Client.Search(searchRoCtx,
 					milvusclient.NewSearchOption(col, TOP_K, []entity.Vector{entity.FloatVector(vec)}).
 						WithANNSField("vector").
-						WithAnnParam(mvindex.NewHNSWAnnParam(HNSW_EF_SEARCH)).
+						WithAnnParam(annParam()).
 						WithOutputFields("id").
 						WithConsistencyLevel(entity.ClEventually))
 				if err != nil {
@@ -521,8 +543,10 @@ func LatencyCheck(p topology.ProbeableEndpoint) error {
 				if len(rs) == 0 || rs[0].IDs == nil || rs[0].IDs.Len() == 0 {
 					return errors.New("latency RO: empty search result")
 				}
+				// Index type. The top-1 exact-match checks only run for FLAT: HNSW is
+				// approximate, so its top-1 is not guaranteed to be the query vector itself.
 				top := rs[0].IDs.(*mvcol.ColumnInt64).Data()[0]
-				if top != id {
+				if INDEX_TYPE == mvindex.Flat && top != id {
 					return errors.Errorf("latency RO: top-1 mismatch got=%d want=%d", top, id)
 				}
 				return nil
@@ -550,7 +574,7 @@ func DurabilityPrepare(p topology.ProbeableEndpoint) error {
 	if err := ensureCollection(ctx, e, e.Config.MonitoringCollectionDurability, entity.DefaultConsistencyLevel); err != nil {
 		return errors.Wrap(err, "ensure durability")
 	}
-	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionDurability, e.Config.DurabilityKeyPrefix); err != nil {
+	if err := initCollectionIfNeeded(ctx, e, e.Config.MonitoringCollectionDurability, e.Config.DurabilityKeyPrefix, DURABILITY_ITEMS); err != nil {
 		return errors.Wrap(err, "init durability")
 	}
 	return nil
@@ -573,9 +597,9 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 	}
 
 	qo := milvusclient.NewQueryOption(col).
-		WithFilter(fmt.Sprintf("id >= 0 && id < %d", e.Config.InitItemsPerCollection)).
+		WithFilter(fmt.Sprintf("id >= 0 && id < %d", DURABILITY_ITEMS)).
 		WithOutputFields("id", "key", "value").
-		WithLimit(e.Config.InitItemsPerCollection)
+		WithLimit(DURABILITY_ITEMS)
 
 	queryCtx, queryCancel := context.WithTimeout(ctx, e.Config.QueryTimeout)
 	defer queryCancel()
@@ -609,7 +633,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 		return errors.Errorf("durability query column length mismatch id=%d key=%d value=%d", idCol.Len(), keyCol.Len(), valCol.Len())
 	}
 
-	expectedTotal := float64(e.Config.InitItemsPerCollection)
+	expectedTotal := float64(DURABILITY_ITEMS)
 	var foundCount float64
 	var corruptedCount float64
 	seenIDs := make(map[int64]struct{}, idCol.Len())
@@ -620,7 +644,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 		key := keyCol.Data()[i]
 		val := valCol.Data()[i]
 
-		if id >= 0 && id < int64(e.Config.InitItemsPerCollection) {
+		if id >= 0 && id < int64(DURABILITY_ITEMS) {
 			seenIDs[id] = struct{}{}
 		} else {
 			level.Warn(e.Logger).Log("msg", "durability unexpected id range", "collection", col, "id", id, "key", key)
@@ -639,7 +663,7 @@ func DurabilityCheck(p topology.ProbeableEndpoint) error {
 		}
 	}
 
-	missingCount := e.Config.InitItemsPerCollection - len(seenIDs)
+	missingCount := DURABILITY_ITEMS - len(seenIDs)
 	if missingCount > 0 {
 		level.Warn(e.Logger).Log("msg", "durability missing items detected", "collection", col, "missing_count", missingCount)
 	}

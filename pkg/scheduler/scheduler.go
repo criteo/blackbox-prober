@@ -132,8 +132,10 @@ func (ps *ProbingScheduler) ManageProbes() {
 	level.Info(ps.logger).Log("msg", "New topology received, updating...")
 
 	toStopEndpoints, toAddEndpoints := ps.currentTopology.Diff(&newTopology)
-	any_failed_update := false
-	startedEndpoints := []topology.ProbeableEndpoint{}
+
+	// A cluster failing to start is left out of the topology, so that the next update retries it
+	// without affecting the other clusters.
+	failedClusters := map[string]bool{}
 	for _, endpoint := range toAddEndpoints {
 		var checks []Check
 		var endpoint_type string
@@ -146,31 +148,27 @@ func (ps *ProbingScheduler) ManageProbes() {
 		}
 
 		if len(checks) > 0 {
-			err, started := ps.startNewWorker(endpoint, checks)
+			err, _ := ps.startNewWorker(endpoint, checks)
 			if err != nil {
 				level.Error(ps.logger).Log("msg", "Probe start failure", "err", err)
 				SchedulerFailureTotal.WithLabelValues(endpoint.GetName()).Inc()
-				any_failed_update = true
-				continue
-			}
-			if started {
-				startedEndpoints = append(startedEndpoints, endpoint)
+				failedClusters[endpoint.GetName()] = true
+				delete(newTopology.Clusters, endpoint.GetHash())
 			}
 		} else {
 			level.Debug(ps.logger).Log("msg", fmt.Sprintf("Skipped probing on %s: no %s checks defined", endpoint.GetName(), endpoint_type))
 		}
 	}
-	// Only update the topology if all probes successfully started
-	if !any_failed_update {
-		for _, endpoint := range toStopEndpoints {
-			ps.stopWorkerForEndpoint(endpoint)
+
+	for _, endpoint := range toStopEndpoints {
+		// The replacement of this cluster failed to start: keep probing it as it is
+		if cluster, ok := ps.currentTopology.Clusters[endpoint.GetHash()]; ok && failedClusters[endpoint.GetName()] {
+			newTopology.AppendCluster(cluster)
+			continue
 		}
-		ps.currentTopology = newTopology
-	} else {
-		for _, endpoint := range startedEndpoints {
-			ps.stopWorkerForEndpoint(endpoint)
-		}
+		ps.stopWorkerForEndpoint(endpoint)
 	}
+	ps.currentTopology = newTopology
 }
 
 func (ps *ProbingScheduler) stopWorkerForEndpoint(endpoint topology.ProbeableEndpoint) {

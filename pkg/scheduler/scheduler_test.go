@@ -19,8 +19,9 @@ type testEndpoint struct {
 	CheckCallCount   int
 	RefreshCallCount int
 	// Used to track asynchronous changes
-	UpdatedChan   chan bool
-	FailOnConnect bool
+	UpdatedChan      chan bool
+	FailOnConnect    bool
+	ConnectCallCount int
 }
 
 func (te *testEndpoint) Refresh() error {
@@ -32,6 +33,7 @@ func (te *testEndpoint) Refresh() error {
 }
 
 func (te *testEndpoint) Connect() error {
+	te.ConnectCallCount += 1
 	if te.FailOnConnect {
 		return errors.New("fake connect error")
 	}
@@ -340,6 +342,52 @@ func TestWorkerCloseEndpointOnStartFailure(t *testing.T) {
 	}
 }
 
+// A cluster failing to start must not prevent the other clusters from being probed, must be
+// retried at each refresh, and must not block the stop of clusters removed from the topology.
+func TestFailingEndpointDoesNotAffectOthers(t *testing.T) {
+	topologyUpdateChan := make(chan topology.ClusterMap, 1)
+	ps := NewProbingScheduler(log.NewNopLogger(), topologyUpdateChan)
+	ps.RegisterNewClusterCheck(Check{Name: "fakecheck", PrepareFn: Noop, CheckFn: Noop, TeardownFn: Noop, Interval: time.Hour})
+
+	healthy := testEndpoint{}
+	healthy.Name, healthy.Hash, healthy.Cluster = "healthy", "healthy", true
+	failing := testEndpoint{FailOnConnect: true}
+	failing.Name, failing.Hash, failing.Cluster = "failing", "failing", true
+
+	refresh := func(endpoints ...*testEndpoint) {
+		clusterMap := topology.NewClusterMap()
+		for _, e := range endpoints {
+			clusterMap.AppendCluster(topology.NewCluster(e))
+		}
+		topologyUpdateChan <- clusterMap
+		ps.ManageProbes()
+	}
+
+	// Two refreshes with a failing cluster: the healthy one starts once and keeps running,
+	// the failing one is retried.
+	refresh(&healthy, &failing)
+	refresh(&healthy, &failing)
+	if _, running := ps.workerControlChans["healthy"]; !running || healthy.ConnectCallCount != 1 || healthy.Closed {
+		t.Fatalf("healthy endpoint must start once and keep running (connects=%d, closed=%v)", healthy.ConnectCallCount, healthy.Closed)
+	}
+	if failing.ConnectCallCount != 2 {
+		t.Fatalf("failing endpoint must be retried at each refresh (connects=%d)", failing.ConnectCallCount)
+	}
+
+	// The healthy cluster is removed while the other one still fails: it must be stopped.
+	refresh(&failing)
+	if _, running := ps.workerControlChans["healthy"]; running || !healthy.Closed {
+		t.Fatalf("removed endpoint must be stopped even when another endpoint fails")
+	}
+
+	// The failing cluster recovers: it starts at the next refresh.
+	failing.FailOnConnect = false
+	refresh(&failing)
+	if _, running := ps.workerControlChans["failing"]; !running {
+		t.Fatalf("recovered endpoint must start at the next refresh")
+	}
+}
+
 func TestStartNewWorkerEarlyReturns(t *testing.T) {
 	topologyUpdateChan := make(chan topology.ClusterMap, 1)
 
@@ -511,67 +559,48 @@ func TestIndependentProbingRunsChecksConcurrentlyAndStopsCleanly(t *testing.T) {
 	}
 }
 
-func TestManageProbesKeepsCurrentWorkersAndRollsBackNewWorkersOnUpdateFailure(t *testing.T) {
+// When the monitored namespaces of a running cluster change and its new endpoint fails to start,
+// the current endpoint keeps being probed until the new one starts.
+func TestManageProbesKeepsCurrentWorkerWhenReplacementFails(t *testing.T) {
 	topologyUpdateChan := make(chan topology.ClusterMap, 1)
 	ps := NewProbingScheduler(log.NewNopLogger(), topologyUpdateChan)
-	fakeCheck := Check{
-		Name:       "fakecheck",
-		PrepareFn:  Noop,
-		CheckFn:    Noop,
-		TeardownFn: Noop,
-		Interval:   time.Hour,
-	}
-	ps.RegisterNewClusterCheck(fakeCheck)
-	ps.RegisterNewNodeCheck(fakeCheck)
+	ps.RegisterNewClusterCheck(Check{Name: "fakecheck", PrepareFn: Noop, CheckFn: Noop, TeardownFn: Noop, Interval: time.Hour})
 
-	oldEndpoint := testEndpoint{}
-	oldEndpoint.Name = "old"
-	oldEndpoint.Hash = "old"
-	oldEndpoint.Cluster = true
-	oldMap := topology.NewClusterMap()
-	oldMap.AppendCluster(topology.NewCluster(&oldEndpoint))
-
-	topologyUpdateChan <- oldMap
-	ps.ManageProbes()
+	current := testEndpoint{}
+	current.Name, current.Hash, current.Cluster = "cluster", "cluster/ns:a", true
+	replacement := testEndpoint{FailOnConnect: true}
+	replacement.Name, replacement.Hash, replacement.Cluster = "cluster", "cluster/ns:a,b", true
 	t.Cleanup(func() {
-		if _, exists := ps.workerControlChans[oldEndpoint.GetHash()]; exists {
-			ps.stopWorkerForEndpoint(&oldEndpoint)
+		for _, e := range []*testEndpoint{&current, &replacement} {
+			if _, running := ps.workerControlChans[e.GetHash()]; running {
+				ps.stopWorkerForEndpoint(e)
+			}
 		}
 	})
 
-	newClusterEndpoint := testEndpoint{}
-	newClusterEndpoint.Name = "new-cluster"
-	newClusterEndpoint.Hash = "new-cluster"
-	newClusterEndpoint.Cluster = true
-	failingNodeEndpoint := testEndpoint{}
-	failingNodeEndpoint.Name = "failing-node"
-	failingNodeEndpoint.Hash = "failing-node"
-	failingNodeEndpoint.FailOnConnect = true
+	refresh := func(endpoint *testEndpoint) {
+		clusterMap := topology.NewClusterMap()
+		clusterMap.AppendCluster(topology.NewCluster(endpoint))
+		topologyUpdateChan <- clusterMap
+		ps.ManageProbes()
+	}
 
-	newCluster := topology.NewCluster(&newClusterEndpoint)
-	newCluster.AddEndpoint(&failingNodeEndpoint)
-	newMap := topology.NewClusterMap()
-	newMap.AppendCluster(newCluster)
+	refresh(&current)
+	refresh(&replacement)
+	refresh(&replacement)
+	if _, running := ps.workerControlChans[current.GetHash()]; !running || current.Closed {
+		t.Fatalf("current worker must keep running while its replacement fails to start")
+	}
+	if replacement.ConnectCallCount != 2 {
+		t.Fatalf("replacement must be retried at each refresh (connects=%d)", replacement.ConnectCallCount)
+	}
 
-	topologyUpdateChan <- newMap
-	ps.ManageProbes()
-
-	if oldEndpoint.Closed {
-		t.Fatal("Existing worker was stopped even though topology update failed")
+	replacement.FailOnConnect = false
+	refresh(&replacement)
+	if _, running := ps.workerControlChans[current.GetHash()]; running || !current.Closed {
+		t.Fatalf("current worker must be stopped once its replacement started")
 	}
-	if !newClusterEndpoint.Closed {
-		t.Fatal("New worker started during failed topology update was not rolled back")
-	}
-	if !failingNodeEndpoint.Closed {
-		t.Fatal("Endpoint was not closed after start failure")
-	}
-	if _, exists := ps.currentTopology.Clusters[oldEndpoint.GetHash()]; !exists {
-		t.Fatal("Current topology changed after failed update")
-	}
-	if _, exists := ps.workerControlChans[oldEndpoint.GetHash()]; !exists {
-		t.Fatal("Existing worker was removed after failed update")
-	}
-	if _, exists := ps.workerControlChans[newClusterEndpoint.GetHash()]; exists {
-		t.Fatal("Rolled back worker is still registered")
+	if _, running := ps.workerControlChans[replacement.GetHash()]; !running {
+		t.Fatalf("replacement must run once started")
 	}
 }
